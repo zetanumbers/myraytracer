@@ -1,0 +1,2 @@
+[alias]
+daemon = ["run", "--bin", "daemon", "--", "cargo", "run", "--bin", "renderer", "--"]
