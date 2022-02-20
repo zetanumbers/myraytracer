@@ -16,7 +16,6 @@ fn main() {
     let mut pixels = {
         let surface_texture = px::SurfaceTexture::new(size.width, size.height, &window);
         px::PixelsBuilder::new(size.width, size.height, surface_texture)
-            .wgpu_backend(wgpu::Backends::GL)
             .build()
             .expect("Pixels instantiation")
     };

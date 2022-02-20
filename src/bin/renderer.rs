@@ -2,6 +2,7 @@ use std::{env, time};
 
 use itertools::Itertools;
 // use rayon::prelude::*;
+const REDRAW_PIXELS: usize = 1024 * 1024;
 
 fn main() {
     env_logger::init();
@@ -35,7 +36,7 @@ fn main() {
                 .unwrap();
 
             *batch_count += 1;
-            if *batch_count == 128 {
+            if *batch_count == REDRAW_PIXELS {
                 *batch_count = 0;
                 sender.send(raytracer::Command::Redraw).unwrap();
             }
