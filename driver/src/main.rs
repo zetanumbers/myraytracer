@@ -54,6 +54,7 @@ fn main() {
             wnt::Event::NewEvents(wnt::event::StartCause::Poll) => {
                 if renderer.changed() {
                     unsafe { renderer.load(window.inner_size()) };
+                    pixels.get_frame().fill(0);
                 }
 
                 if renderer.render(pixels.get_frame()) {
@@ -67,6 +68,7 @@ fn main() {
                 unsafe { renderer.load(size) };
                 pixels.resize_surface(size.width, size.height);
                 pixels.resize_buffer(size.width, size.height);
+                pixels.get_frame().fill(0);
             }
             wnt::Event::WindowEvent {
                 event: winit::event::WindowEvent::CloseRequested,

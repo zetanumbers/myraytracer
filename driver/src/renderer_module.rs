@@ -40,7 +40,7 @@ impl RendererPlugin {
         watcher
             .watch(
                 &path.parent().expect("Got root as a renderer plugin path"),
-                notify::RecursiveMode::Recursive,
+                notify::RecursiveMode::NonRecursive,
             )
             .expect("Watching renderer");
 

@@ -7,4 +7,5 @@ edition = "2021"
 crate_type = ["cdylib"]
 
 [dependencies]
+glam = "0.20.2"
 raytracer-common = { path = "../common" }
