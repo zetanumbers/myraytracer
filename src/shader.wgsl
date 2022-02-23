@@ -24,7 +24,7 @@ struct VertexOutput {
 fn vs_main(
     in: VertexInput,
 ) -> VertexOutput {
-    return VertexOutput(in.position, (in.position.xy + vec2<f32>(1.0, 1.0)) / 2.0);
+    return VertexOutput(in.position, (in.position.xy + vec2<f32>(1.0)) / 2.0);
 }
 
 struct Ray {
@@ -36,26 +36,34 @@ fn ray_at(ray: Ray, t: f32) -> vec3<f32> {
     return ray.origin + t * ray.direction;
 }
 
-fn hit_sphere(center: vec3<f32>, radius: f32, ray: Ray) -> bool {
+fn hit_sphere(center: vec3<f32>, radius: f32, ray: Ray) -> f32 {
     let oc = ray.origin - center;
     let a = dot(ray.direction, ray.direction);
-    let b = 2.0 * dot(oc, ray.direction);
+    let hb = dot(oc, ray.direction);
     let c = dot(oc, oc) - radius * radius;
-    let discriminant = b * b - 4.0 * a * c;
-    return discriminant > 0.0;
+    let discriminant = hb * hb - a * c;
+    if (discriminant >= 0.0) {
+        return (-hb - sqrt(discriminant)) / a;
+    } else {
+        return -1.0;
+    }
 }
 
 fn ray_color(ray: Ray) -> vec3<f32> {
-    if (hit_sphere(vec3<f32>(0.0, 0.0, -1.0), 0.5, ray)) {
-        return vec3<f32>(1.0, 0.0, 0.0);
+    let center = vec3<f32>(0.0, 0.0, -1.0);
+    let radius = 0.5;
+    let t = hit_sphere(center, radius, ray);
+    if (t > 0.0) {
+        let normal = normalize(ray_at(ray, t) - center);
+        return 0.5 * (normal + vec3<f32>(1.0));
     }
     let t = 0.5 * (normalize(ray.direction).y + 1.0);
-    return (1.0 - t) * vec3<f32>(1.0, 1.0, 1.0) + t * vec3<f32>(0.5, 0.7, 1.0);
+    return mix(vec3<f32>(1.0), vec3<f32>(0.5, 0.7, 1.0), t);
 }
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    let lower_left_corner = params.origin.xyz + vec3<f32>(-params.viewport_shape / 2.0, params.focal_length);
+    let lower_left_corner = params.origin.xyz + vec3<f32>(-params.viewport_shape / 2.0, -params.focal_length);
     let ray = Ray(params.origin.xyz, lower_left_corner + vec3<f32>(params.viewport_shape * in.uv, 0.0));
     return vec4<f32>(ray_color(ray), 1.0);
 }
