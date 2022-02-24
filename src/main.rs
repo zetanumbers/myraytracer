@@ -1,5 +1,8 @@
+mod param;
+mod solid;
+
 use bytemuck::{Pod, Zeroable};
-use std::{borrow::Cow, mem, num::NonZeroU64};
+use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 use winit::{
     dpi,
@@ -30,33 +33,22 @@ impl Vertex {
     };
 }
 
-#[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct ParamUniform {
-    origin: [f32; 4],
-    image_shape: [f32; 2],
-    viewport_shape: [f32; 2],
-    focal_length: f32,
-    _padding: [f32; 3],
-}
-
-impl ParamUniform {
-    fn new(size: dpi::PhysicalSize<u32>) -> Self {
-        ParamUniform {
-            origin: [0., 0., 0., 1.],
-            image_shape: [size.width as f32, size.height as f32],
-            viewport_shape: [2.0 * size.width as f32 / size.height as f32, 2.0],
-            focal_length: 1.0,
-            _padding: <_>::zeroed(),
-        }
-    }
-}
-
 const UNIT_SQUARE_VERTICES: [Vertex; 4] = [
     Vertex::new([-1., 1., 0., 1.]),
     Vertex::new([1., 1., 0., 1.]),
     Vertex::new([-1., -1., 0., 1.]),
     Vertex::new([1., -1., 0., 1.]),
+];
+
+const SPHERES: [solid::Sphere; 2] = [
+    solid::Sphere {
+        center: [0.0, 0.0, -1.0],
+        radius: 0.5,
+    },
+    solid::Sphere {
+        center: [0.0, -100.5, -1.0],
+        radius: 100.0,
+    },
 ];
 
 struct State {
@@ -72,9 +64,8 @@ struct State {
     _swapchain_format: wgpu::TextureFormat,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    param_buffer: wgpu::Buffer,
-    _param_bind_group_layout: wgpu::BindGroupLayout,
-    param_bind_group: wgpu::BindGroup,
+    param_uniform: param::ParamUniform,
+    solids: solid::Solids,
 }
 
 impl State {
@@ -100,7 +91,8 @@ impl State {
                     label: None,
                     features: wgpu::Features::empty(),
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    limits: wgpu::Limits::default()
+                        // limits: wgpu::Limits::downlevel_webgl2_defaults()
                         .using_resolution(adapter.limits()),
                 },
                 None,
@@ -114,26 +106,14 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
         });
 
-        let param_bind_group_layout_entry = wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(mem::size_of::<ParamUniform>() as u64),
-            },
-            count: None,
-        };
+        let param_uniform =
+            param::ParamUniform::new(&device, &param::Params::new(window.inner_size()));
 
-        let param_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("param_bind_group_layout"),
-                entries: &[param_bind_group_layout_entry],
-            });
+        let solids = solid::Solids::new(&device, &SPHERES);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&param_bind_group_layout],
+            bind_group_layouts: &[param_uniform.layout(), solids.layout()],
             push_constant_ranges: &[],
         });
 
@@ -190,27 +170,6 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let param_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::bytes_of(&ParamUniform::new(size)),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let param_bind_group_entry = wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &param_buffer,
-                offset: 0,
-                size: None,
-            }),
-        };
-
-        let param_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("param_bind_group"),
-            layout: &param_bind_group_layout,
-            entries: &[param_bind_group_entry],
-        });
-
         State {
             _window: window,
             surface,
@@ -224,9 +183,8 @@ impl State {
             _swapchain_format: swapchain_format,
             render_pipeline,
             vertex_buffer,
-            param_buffer,
-            _param_bind_group_layout: param_bind_group_layout,
-            param_bind_group,
+            param_uniform,
+            solids,
         }
     }
 
@@ -256,7 +214,8 @@ impl State {
             });
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            rpass.set_bind_group(0, &self.param_bind_group, &[]);
+            self.param_uniform.attach(&mut rpass, 0);
+            self.solids.attach(&mut rpass, 1);
             rpass.draw(0..UNIT_SQUARE_VERTICES.len() as u32, 0..1);
         }
 
@@ -269,11 +228,8 @@ impl State {
         self.surface_config.width = size.width;
         self.surface_config.height = size.height;
         self.surface.configure(&self.device, &self.surface_config);
-        self.queue.write_buffer(
-            &self.param_buffer,
-            0,
-            bytemuck::bytes_of(&ParamUniform::new(size)),
-        );
+        self.param_uniform
+            .set(&self.queue, &param::Params::new(size));
     }
 }
 
