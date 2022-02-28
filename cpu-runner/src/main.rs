@@ -8,11 +8,14 @@ mod winit {
     };
 }
 use glam::{vec2, Vec2, Vec3, Vec4};
+use rand::Rng;
+
+const SAMPLES_PER_PIXEL: usize = 100;
 
 fn main() {
     let event_loop = winit::EventLoop::new();
     let window = winit::Window::new(&event_loop).expect("Creating a window");
-    // WARNING: pixels should never outlive window due to https://github.com/parasyte/pixels/issues/238
+    // WARNING: pixels should never outlive window, see https://github.com/parasyte/pixels/issues/238
     let mut pixels = {
         let size = window.inner_size();
         let surface = pixels::SurfaceTexture::new(size.width, size.height, &window);
@@ -38,24 +41,32 @@ fn main() {
                 const ORIGIN: Vec3 = Vec3::ZERO;
                 let viewport_shape: Vec2 = vec2(2. * size.x / size.y, 2.);
                 const FOCAL_LENGTH: f32 = 1.0;
+                let mut rng = rand::thread_rng();
 
                 frame_colors.into_iter().enumerate().for_each(|(i, f)| {
                     let i = i as f32;
-                    let xy = vec2(i % size.x, size.y - i / size.x - 1.0);
-                    let uv = xy / (size - Vec2::ONE);
+                    let xy_base = vec2(i % size.x, size.y - i / size.x - 1.);
 
-                    let direction = ORIGIN
-                        + Vec3::from(((uv - Vec2::splat(0.5)) * viewport_shape, -FOCAL_LENGTH));
-                    let ray = raytracer::Ray {
-                        origin: ORIGIN,
-                        direction,
-                    };
+                    let avg = (0..SAMPLES_PER_PIXEL)
+                        .map(|_| {
+                            let xy = xy_base + vec2(rng.gen(), rng.gen());
+                            let uv = xy / (size - Vec2::ONE);
 
-                    *f = world
-                        .color(ray)
-                        .clamp(Vec4::ZERO, Vec4::ONE)
-                        .to_array()
-                        .map(|c| (c * 255.) as u8);
+                            let direction = ORIGIN
+                                + Vec3::from((
+                                    (uv - Vec2::splat(0.5)) * viewport_shape,
+                                    -FOCAL_LENGTH,
+                                ));
+                            let ray = raytracer::Ray {
+                                origin: ORIGIN,
+                                direction,
+                            };
+
+                            world.color(ray).clamp(Vec4::ZERO, Vec4::ONE)
+                        })
+                        .fold(Vec4::ZERO, |acc, c| acc + c)
+                        / SAMPLES_PER_PIXEL as f32;
+                    *f = linear_to_srgb(avg);
                 });
 
                 pixels.render().unwrap();
@@ -74,5 +85,16 @@ fn main() {
             } => *control_flow = winit::ControlFlow::Exit,
             _ => (),
         }
+    })
+}
+
+fn linear_to_srgb(color: Vec4) -> [u8; 4] {
+    color.to_array().map(|c| {
+        let s = if c <= 0.0031308 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1. / 2.4) - 0.055
+        };
+        (s * 256.).clamp(0., 255.) as u8
     })
 }
