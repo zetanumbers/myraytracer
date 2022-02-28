@@ -1,0 +1,10 @@
+[package]
+name = "cpu-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pixels = "0.9.0"
+winit = "0.26.1"
+raytracer = { path = "../raytracer" }
+glam = "0.20.2"

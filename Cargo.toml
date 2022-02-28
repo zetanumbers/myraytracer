@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "raytracer",
+  "cpu-runner",
+]
+resolver = "2"
