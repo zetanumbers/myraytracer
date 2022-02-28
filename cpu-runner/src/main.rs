@@ -18,7 +18,7 @@ fn main() {
         let surface = pixels::SurfaceTexture::new(size.width, size.height, &window);
         pixels::Pixels::new(size.width, size.height, surface).unwrap()
     };
-    let world = raytracer::World {};
+    let world = raytracer::World::default();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = winit::ControlFlow::Wait;
