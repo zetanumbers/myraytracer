@@ -23,10 +23,16 @@ pub struct World {
 impl Default for World {
     fn default() -> Self {
         World {
-            spheres: vec![Sphere {
-                center: vec3(0., 0., -1.),
-                radius: 0.5,
-            }],
+            spheres: vec![
+                Sphere {
+                    center: vec3(0., 0., -1.),
+                    radius: 0.5,
+                },
+                Sphere {
+                    center: vec3(0., -100.5, -1.),
+                    radius: 100.,
+                },
+            ],
         }
     }
 }
