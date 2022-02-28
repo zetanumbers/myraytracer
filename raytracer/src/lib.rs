@@ -46,10 +46,39 @@ trait Hit {
     fn hit_with_ray(&self, ray: Ray) -> Option<HitReport>;
 }
 
+#[derive(Clone, Copy)]
 struct HitReport {
-    t: f32,
     at: Vec3,
+    t: f32,
     normal: Vec3,
+    face: Face,
+}
+
+#[derive(Clone, Copy)]
+enum Face {
+    Front,
+    Back,
+}
+
+impl core::ops::Neg for Face {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        match self {
+            Face::Front => Face::Back,
+            Face::Back => Face::Front,
+        }
+    }
+}
+
+impl HitReport {
+    fn correct_face(mut self, ray: Ray) -> Self {
+        if self.normal.dot(ray.direction) > 0. {
+            self.normal = -self.normal;
+            self.face = -self.face;
+        }
+        self
+    }
 }
 
 impl Ray {
@@ -78,13 +107,20 @@ impl Hit for Sphere {
         let c = oc.length_squared() - self.radius.powi(2);
         let d = b.powi(2) - a * c;
 
-        let t = (d >= 0.).then(|| (-b - d.sqrt()) / a)?;
-        if t < 0.0 {
-            return None;
-        }
+        let t = (d >= 0.)
+            .then(|| (-b - d.sqrt()) / a)
+            .filter(|&t| t >= 0.)?;
         let at = ray.at(t);
         let normal = (at - self.center) / self.radius;
 
-        Some(HitReport { t, at, normal })
+        Some(
+            HitReport {
+                t,
+                at,
+                normal,
+                face: Face::Front,
+            }
+            .correct_face(ray),
+        )
     }
 }
