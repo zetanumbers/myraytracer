@@ -102,6 +102,7 @@ impl Handle {
                     }
                 }
                 log::info!("Renderer thread finished in {:?}", start.elapsed());
+                state.window.request_redraw();
             }
         }));
         Self { thread, continue_ }
