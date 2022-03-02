@@ -20,7 +20,7 @@ const SAMPLES_PER_PIXEL: usize = 128;
 const ORIGIN: Vec3 = Vec3::ZERO;
 const FOCAL_LENGTH: f32 = 1.0;
 const UPDATE_RATE: f64 = 2.;
-const FRAME_RATE: f64 = 2.;
+const FRAME_RATE: f64 = 1.;
 
 fn main() {
     env_logger::init();
@@ -83,7 +83,14 @@ fn main() {
                     is_synthetic: false,
                     ..
                 } => {
-                    renderer.restart(Arc::clone(&state)).unwrap();
+                    renderer.break_join().unwrap();
+
+                    let mut pixels = state.pixels.lock();
+                    let (frame_colors, rest) = pixels.get_frame().as_chunks_mut::<4>();
+                    assert_eq!(rest, []);
+                    frame_colors.fill([0, 0, 0, 255]);
+
+                    renderer = renderer::Handle::new(Arc::clone(&state));
                     state.window.request_redraw();
                 }
                 winit::WindowEvent::CloseRequested => *control_flow = winit::ControlFlow::Exit,

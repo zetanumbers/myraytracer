@@ -1,7 +1,8 @@
 use crate::{winit, State, FOCAL_LENGTH, ORIGIN, SAMPLES_PER_PIXEL, UPDATE_RATE};
 use glam::{vec2, Vec2, Vec3, Vec4};
 use rand::prelude::*;
-use std::{iter, num::NonZeroUsize, sync::Arc, thread, time};
+use rayon::prelude::*;
+use std::{iter, num::NonZeroUsize, ops::ControlFlow, sync::Arc, thread, time};
 
 pub struct Handle {
     thread: Option<thread::JoinHandle<()>>,
@@ -29,14 +30,13 @@ impl Handle {
                     size.height
                 );
 
-                let mut rng = thread_rng();
-
                 let shape = vec2(size.width as f32, size.height as f32);
                 let pixel_shape = Vec2::ONE / shape;
                 let viewport_shape = 2. * shape / shape.y;
 
                 let update_time = time::Duration::from_secs_f64(1. / UPDATE_RATE);
-                let mut pixels_per_frame = NonZeroUsize::new({
+                let pixels_per_frame = NonZeroUsize::new({
+                    let mut rng = thread_rng();
                     let start = time::Instant::now();
                     let color = multi_sampled_color(
                         &state.world,
@@ -51,58 +51,72 @@ impl Handle {
                 })
                 .unwrap_or(NonZeroUsize::new(1).unwrap());
 
-                let mut row_buffer = vec![[0; 4]; size.width].into_boxed_slice();
-
-                for row in 0..size.height {
-                    let y = shape.y - row as f32 - 1.;
-                    let mut column_range = 0..pixels_per_frame.get().min(size.width);
-                    loop {
-                        let start = time::Instant::now();
-                        for (column, out) in row_buffer[column_range.clone()].iter_mut().enumerate()
-                        {
-                            let xy = vec2(column as f32, y);
-                            let uv = xy / shape;
-                            *out = multi_sampled_color(
-                                &state.world,
-                                &mut rng,
-                                uv,
-                                pixel_shape,
-                                viewport_shape,
-                            );
-                        }
-
-                        let elapsed = start.elapsed();
-                        pixels_per_frame = NonZeroUsize::new(
-                            (column_range.len() as f64 * update_time.div_duration_f64(elapsed))
-                                .floor() as usize,
+                match (0..size.height).into_par_iter().try_for_each_init(
+                    || {
+                        (
+                            rand::thread_rng(),
+                            vec![[0; 4]; size.width].into_boxed_slice(),
+                            pixels_per_frame.clone(),
                         )
-                        .unwrap_or(NonZeroUsize::new(1).unwrap());
+                    },
+                    |(ref mut rng, ref mut row_buffer, ref mut pixels_per_frame), row| {
+                        let y = shape.y - row as f32 - 1.;
+                        let mut column_range = 0..pixels_per_frame.get().min(size.width);
+                        loop {
+                            let start = time::Instant::now();
+                            for (column, out) in
+                                row_buffer[column_range.clone()].iter_mut().enumerate()
+                            {
+                                let xy = vec2(column as f32, y);
+                                let uv = xy / shape;
+                                *out = multi_sampled_color(
+                                    &state.world,
+                                    rng,
+                                    uv,
+                                    pixel_shape,
+                                    viewport_shape,
+                                );
+                            }
 
-                        log::trace!("Flushing pixels at row {row}, columns {column_range:?}");
-                        let mut pixels = state.pixels.lock();
-                        if continue_.strong_count() == 0 {
-                            log::info!("Renderer thread exited early");
-                            return;
-                        }
-                        let frame = pixels.get_frame();
-                        if frame.len() != size.width * size.height * 4 {
-                            log::error!("Renderer thread detected a resize",);
-                            return;
-                        }
-                        let (frame, _) = frame.as_chunks_mut::<4>();
-                        let row_out = &mut frame[row * size.width..][..size.width];
-                        row_out[column_range.clone()]
-                            .copy_from_slice(&row_buffer[column_range.clone()]);
+                            let elapsed = start.elapsed();
+                            *pixels_per_frame = NonZeroUsize::new(
+                                (column_range.len() as f64 * update_time.div_duration_f64(elapsed))
+                                    .floor() as usize,
+                            )
+                            .unwrap_or(NonZeroUsize::new(1).unwrap());
 
-                        column_range = column_range.end..column_range.end + pixels_per_frame.get();
+                            log::trace!("Flushing pixels at row {row}, columns {column_range:?}");
+                            let mut pixels = state.pixels.lock();
+                            if continue_.strong_count() == 0 {
+                                return Err(RenderError::Cancel);
+                            }
+                            let frame = pixels.get_frame();
+                            if frame.len() != size.width * size.height * 4 {
+                                return Err(RenderError::Resize);
+                            }
+                            let (frame, _) = frame.as_chunks_mut::<4>();
+                            let row_out = &mut frame[row * size.width..][..size.width];
+                            row_out[column_range.clone()]
+                                .copy_from_slice(&row_buffer[column_range.clone()]);
 
-                        if column_range.end > size.width {
-                            break;
+                            column_range =
+                                column_range.end..column_range.end + pixels_per_frame.get();
+
+                            if column_range.end > size.width {
+                                return Ok(());
+                            }
                         }
+                    },
+                ) {
+                    Ok(()) => {
+                        log::info!("Renderer thread finished in {:?}", start.elapsed());
+                        state.window.request_redraw();
+                    }
+                    Err(RenderError::Cancel) => log::info!("Render cancelled"),
+                    Err(RenderError::Resize) => {
+                        log::warn!("Renderer thread detected a resize, cancelling render")
                     }
                 }
-                log::info!("Renderer thread finished in {:?}", start.elapsed());
-                state.window.request_redraw();
             }
         }));
         Self { thread, continue_ }
@@ -136,6 +150,11 @@ impl Handle {
         }
         Ok(())
     }
+}
+
+enum RenderError {
+    Cancel,
+    Resize,
 }
 
 fn multi_sampled_color(
