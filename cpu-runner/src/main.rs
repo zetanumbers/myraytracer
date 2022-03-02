@@ -1,100 +1,95 @@
-#![feature(slice_as_chunks)]
+#![feature(slice_as_chunks, bench_black_box, div_duration)]
+
+mod renderer;
+mod state;
 
 mod winit {
     pub use winit::{
-        event::{Event, WindowEvent},
+        dpi::PhysicalSize,
+        event::{ElementState, Event, KeyboardInput, StartCause, VirtualKeyCode, WindowEvent},
         event_loop::{ControlFlow, EventLoop},
         window::Window,
     };
 }
-use glam::{vec2, Vec2, Vec3, Vec4};
-use rand::Rng;
+use glam::Vec3;
+use parking_lot::FairMutex as Mutex;
+use state::State;
+use std::{sync::Arc, time};
 
-const SAMPLES_PER_PIXEL: usize = 100;
+const SAMPLES_PER_PIXEL: usize = 128;
+const ORIGIN: Vec3 = Vec3::ZERO;
+const FOCAL_LENGTH: f32 = 1.0;
+const UPDATE_RATE: f64 = 1.;
+const FRAME_RATE: f64 = 1.;
 
 fn main() {
+    env_logger::init();
+
     let event_loop = winit::EventLoop::new();
     let window = winit::Window::new(&event_loop).expect("Creating a window");
-    // WARNING: pixels should never outlive window, see https://github.com/parasyte/pixels/issues/238
-    let mut pixels = {
-        let size = window.inner_size();
-        let surface = pixels::SurfaceTexture::new(size.width, size.height, &window);
-        pixels::Pixels::new(size.width, size.height, surface).unwrap()
-    };
-    let world = raytracer::World::default();
+
+    let state = Arc::new(State {
+        // WARNING: pixels should never outlive window, see https://github.com/parasyte/pixels/issues/238
+        pixels: Mutex::new({
+            let size = window.inner_size();
+            let surface = pixels::SurfaceTexture::new(size.width, size.height, &window);
+            pixels::Pixels::new(size.width, size.height, surface).unwrap()
+        }),
+        window,
+        world: raytracer::World::default(),
+    });
+    let mut renderer = renderer::Handle::new(Arc::clone(&state));
+    let frame = time::Duration::from_secs_f64(1. / FRAME_RATE);
+    let mut next_frame = time::Instant::now() + frame;
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = winit::ControlFlow::Wait;
+        let now = time::Instant::now();
+        if next_frame < now {
+            state.window.request_redraw();
+            next_frame = now + frame;
+        }
+        *control_flow = if renderer.is_running().unwrap() {
+            winit::ControlFlow::WaitUntil(next_frame)
+        } else {
+            winit::ControlFlow::Wait
+        };
         match event {
             winit::Event::RedrawRequested(_) => {
-                let size = window.inner_size();
-
-                let (frame_colors, rest) = pixels.get_frame().as_chunks_mut::<4>();
-                assert_eq!(rest, []);
-                assert_eq!(
-                    frame_colors.len(),
-                    size.width as usize * size.height as usize
-                );
-
-                let size = vec2(size.width as f32, size.height as f32);
-
-                const ORIGIN: Vec3 = Vec3::ZERO;
-                let viewport_shape: Vec2 = vec2(2. * size.x / size.y, 2.);
-                const FOCAL_LENGTH: f32 = 1.0;
-                let mut rng = rand::thread_rng();
-
-                frame_colors.into_iter().enumerate().for_each(|(i, f)| {
-                    let i = i as f32;
-                    let xy_base = vec2(i % size.x, size.y - i / size.x - 1.);
-
-                    let avg = (0..SAMPLES_PER_PIXEL)
-                        .map(|_| {
-                            let xy = xy_base + vec2(rng.gen(), rng.gen());
-                            let uv = xy / (size - Vec2::ONE);
-
-                            let direction = ORIGIN
-                                + Vec3::from((
-                                    (uv - Vec2::splat(0.5)) * viewport_shape,
-                                    -FOCAL_LENGTH,
-                                ));
-                            let ray = raytracer::Ray {
-                                origin: ORIGIN,
-                                direction,
-                            };
-
-                            world.color(ray).clamp(Vec4::ZERO, Vec4::ONE)
-                        })
-                        .fold(Vec4::ZERO, |acc, c| acc + c)
-                        / SAMPLES_PER_PIXEL as f32;
-                    *f = linear_to_srgb(avg);
-                });
-
-                pixels.render().unwrap();
+                state.pixels.lock().render().unwrap();
             }
-            winit::Event::WindowEvent {
-                event: winit::WindowEvent::Resized(size),
-                ..
-            } => {
-                pixels.resize_buffer(size.width, size.height);
-                pixels.resize_surface(size.width, size.height);
-                window.request_redraw();
-            }
-            winit::Event::WindowEvent {
-                event: winit::WindowEvent::CloseRequested,
-                ..
-            } => *control_flow = winit::ControlFlow::Exit,
+            winit::Event::WindowEvent { event, .. } => match event {
+                winit::WindowEvent::Resized(size) => {
+                    renderer.break_join().unwrap();
+
+                    let mut pixels = state.pixels.lock();
+                    pixels.resize_buffer(size.width, size.height);
+                    let (frame_colors, rest) = pixels.get_frame().as_chunks_mut::<4>();
+                    assert_eq!(rest, []);
+                    frame_colors.fill([0, 0, 0, 255]);
+
+                    pixels.resize_surface(size.width, size.height);
+                    drop(pixels);
+
+                    state.window.request_redraw();
+                    renderer.restart(Arc::clone(&state)).unwrap();
+                }
+                winit::WindowEvent::KeyboardInput {
+                    input:
+                        winit::KeyboardInput {
+                            state: winit::ElementState::Released,
+                            virtual_keycode: Some(winit::VirtualKeyCode::R),
+                            ..
+                        },
+                    is_synthetic: false,
+                    ..
+                } => {
+                    renderer.restart(Arc::clone(&state)).unwrap();
+                    state.window.request_redraw();
+                }
+                winit::WindowEvent::CloseRequested => *control_flow = winit::ControlFlow::Exit,
+                _ => (),
+            },
             _ => (),
         }
-    })
-}
-
-fn linear_to_srgb(color: Vec4) -> [u8; 4] {
-    color.to_array().map(|c| {
-        let s = if c <= 0.0031308 {
-            12.92 * c
-        } else {
-            1.055 * c.powf(1. / 2.4) - 0.055
-        };
-        (s * 256.).clamp(0., 255.) as u8
     })
 }
