@@ -1,3 +1,7 @@
+#![feature(result_option_inspect)]
+
+use core::ops;
+
 use glam::{vec3, vec4, Vec3, Vec4};
 
 #[derive(Clone, Copy)]
@@ -25,12 +29,12 @@ impl Default for World {
         World {
             spheres: vec![
                 Sphere {
-                    center: vec3(0., 0., -1.),
-                    radius: 0.5,
-                },
-                Sphere {
                     center: vec3(0., -100.5, -1.),
                     radius: 100.,
+                },
+                Sphere {
+                    center: vec3(0., 0., -1.),
+                    radius: 0.5,
                 },
             ],
         }
@@ -39,7 +43,13 @@ impl Default for World {
 
 impl World {
     pub fn color(&self, ray: Ray) -> Vec4 {
-        if let Some(r) = ray.hit(self) {
+        if let Some(r) = ray.hit(
+            self,
+            ops::Range {
+                start: 0.0,
+                end: f32::INFINITY,
+            },
+        ) {
             return Vec4::from((0.5 * (r.normal + Vec3::ONE), 1.));
         }
 
@@ -49,7 +59,7 @@ impl World {
 }
 
 trait Hit {
-    fn hit_with_ray(&self, ray: Ray) -> Option<HitReport>;
+    fn hit_with_ray(&self, ray: Ray, t_r: ops::Range<f32>) -> Option<HitReport>;
 }
 
 #[derive(Clone, Copy)]
@@ -66,7 +76,7 @@ enum Face {
     Back,
 }
 
-impl core::ops::Neg for Face {
+impl ops::Neg for Face {
     type Output = Self;
 
     fn neg(self) -> Self {
@@ -88,14 +98,21 @@ impl HitReport {
 }
 
 impl Ray {
-    fn hit(self, visible: &impl Hit) -> Option<HitReport> {
-        visible.hit_with_ray(self)
+    fn hit(self, visible: &impl Hit, t_r: ops::Range<f32>) -> Option<HitReport> {
+        visible.hit_with_ray(self, t_r)
     }
 }
 
 impl Hit for World {
-    fn hit_with_ray(&self, ray: Ray) -> Option<HitReport> {
-        self.spheres.iter().find_map(|s| ray.hit(s))
+    fn hit_with_ray(&self, ray: Ray, mut t_r: ops::Range<f32>) -> Option<HitReport> {
+        let mut hit = None;
+        for s in &self.spheres {
+            if let Some(h) = ray.hit(s, t_r.clone()) {
+                hit = Some(h);
+                t_r.end = h.t;
+            }
+        }
+        hit
     }
 }
 
@@ -106,7 +123,7 @@ pub struct Sphere {
 }
 
 impl Hit for Sphere {
-    fn hit_with_ray(&self, ray: Ray) -> Option<HitReport> {
+    fn hit_with_ray(&self, ray: Ray, t_r: ops::Range<f32>) -> Option<HitReport> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
         let b = oc.dot(ray.direction);
@@ -115,7 +132,7 @@ impl Hit for Sphere {
 
         let t = (d >= 0.)
             .then(|| (-b - d.sqrt()) / a)
-            .filter(|&t| t >= 0.)?;
+            .filter(|t| t_r.contains(t))?;
         let at = ray.at(t);
         let normal = (at - self.center) / self.radius;
 
