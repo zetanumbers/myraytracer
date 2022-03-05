@@ -12,7 +12,7 @@ pub struct Sphere {
 }
 
 impl Visible for Sphere {
-    fn hit_with_ray(&self, ray: vision::Ray, t_r: ops::Range<f32>) -> Option<vision::Hit> {
+    fn hit_with_ray(&self, ray: &vision::Ray, t_r: &ops::Range<f32>) -> Option<vision::Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
         let b = oc.dot(ray.direction);

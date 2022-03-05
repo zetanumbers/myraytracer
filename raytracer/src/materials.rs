@@ -7,8 +7,8 @@ pub trait Material {
     fn scatter(
         &self,
         rng: &mut rand_pcg::Pcg32,
-        ray: vision::Ray,
-        hit: vision::Hit,
+        ray: &vision::Ray,
+        hit: &vision::Hit,
     ) -> Option<Scatter>;
 }
 
@@ -27,8 +27,8 @@ impl Material for Lambertian {
     fn scatter(
         &self,
         rng: &mut rand_pcg::Pcg32,
-        _: vision::Ray,
-        hit: vision::Hit,
+        _: &vision::Ray,
+        hit: &vision::Hit,
     ) -> Option<Scatter> {
         let mut direction = hit.normal + glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
 
@@ -56,8 +56,8 @@ impl Material for Metal {
     fn scatter(
         &self,
         rng: &mut rand_pcg::Pcg32,
-        ray: vision::Ray,
-        hit: vision::Hit,
+        ray: &vision::Ray,
+        hit: &vision::Hit,
     ) -> Option<Scatter> {
         let reflection = ray.direction - 2. * ray.direction.project_onto_normalized(hit.normal);
         let direction =

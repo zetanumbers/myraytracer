@@ -13,25 +13,26 @@ impl Ray {
         Ray { origin, direction }
     }
 
-    pub fn at(self, t: f32) -> glam::Vec3 {
+    pub fn at(&self, t: f32) -> glam::Vec3 {
         self.origin + self.direction * t
     }
 
-    pub fn hit<P>(self, visible: &P, t_r: ops::Range<f32>) -> Option<Hit>
+    pub fn hit<'a, P>(&self, visible: &'a P, t_r: &ops::Range<f32>) -> Option<Hit<'a>>
     where
         P: Visible + ?Sized,
     {
-        visible.hit_with_ray(self, t_r)
+        visible.hit_with_ray(&self, &t_r)
     }
 
-    pub fn hit_collection<'a, I, T>(self, iter: I, mut t_r: ops::Range<f32>) -> Option<Hit<'a>>
+    pub fn hit_collection<'a, I, T>(&self, iter: I, t_r: &ops::Range<f32>) -> Option<Hit<'a>>
     where
         I: IntoIterator<Item = &'a T>,
         T: Visible + ?Sized + 'a,
     {
+        let mut t_r = t_r.clone();
         let mut out = None;
         for v in iter {
-            if let Some(hit) = self.hit(v, t_r.clone()) {
+            if let Some(hit) = self.hit(v, &t_r) {
                 out = Some(hit);
                 t_r.end = hit.t;
             }
@@ -42,11 +43,11 @@ impl Ray {
 
 #[enum_dispatch]
 pub trait Visible {
-    fn hit_with_ray(&self, ray: Ray, t_r: ops::Range<f32>) -> Option<Hit<'_>>;
+    fn hit_with_ray(&self, ray: &Ray, t_r: &ops::Range<f32>) -> Option<Hit<'_>>;
 }
 
 impl<T: Visible + ?Sized> Visible for &'_ T {
-    fn hit_with_ray(&self, ray: Ray, t_r: ops::Range<f32>) -> Option<Hit<'_>> {
+    fn hit_with_ray(&self, ray: &Ray, t_r: &ops::Range<f32>) -> Option<Hit<'_>> {
         Visible::hit_with_ray(*self, ray, t_r)
     }
 }
@@ -78,7 +79,7 @@ impl ops::Neg for Face {
 }
 
 impl Hit<'_> {
-    pub fn correct_face(mut self, ray: Ray) -> Self {
+    pub fn correct_face(mut self, ray: &Ray) -> Self {
         if self.normal.dot(ray.direction) > 0. {
             self.normal = -self.normal;
             self.face = -self.face;

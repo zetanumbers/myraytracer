@@ -18,7 +18,7 @@ pub struct Input<'a> {
     pub primitives: &'a [Primitive],
 }
 
-pub fn color(input: &Input<'_>, rng: &mut Pcg32, ray: Ray, depth: u32) -> glam::Vec3 {
+pub fn color(input: &Input<'_>, rng: &mut Pcg32, ray: &Ray, depth: u32) -> glam::Vec3 {
     if depth <= 0 {
         return glam::vec3(0., 0., 0.);
     }
@@ -28,11 +28,11 @@ pub fn color(input: &Input<'_>, rng: &mut Pcg32, ray: Ray, depth: u32) -> glam::
         end: f32::INFINITY,
     };
 
-    ray.hit_collection(input.primitives, init_t_range)
+    ray.hit_collection(input.primitives, &init_t_range)
         .map(|hit| {
             hit.material
-                .scatter(rng, ray, hit)
-                .map(|s| s.attenuation * color(input, rng, s.ray, depth - 1))
+                .scatter(rng, ray, &hit)
+                .map(|s| s.attenuation * color(input, rng, &s.ray, depth - 1))
                 .unwrap_or(glam::Vec3::ZERO)
         })
         .unwrap_or_else(|| {

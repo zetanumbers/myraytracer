@@ -182,7 +182,7 @@ fn multisampled_color(
                     )),
             };
 
-            raytracer::color(input, rng, ray, crate::MAX_DEPTH)
+            raytracer::color(input, rng, &ray, crate::MAX_DEPTH)
                 .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
         })
         .reduce(|acc, c| acc + c)
