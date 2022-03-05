@@ -16,11 +16,12 @@ use parking_lot::FairMutex as Mutex;
 use state::State;
 use std::{sync::Arc, time};
 
-const SAMPLES_PER_PIXEL: usize = 128;
+const SAMPLES_PER_PIXEL: usize = 1024;
 const ORIGIN: Vec3 = Vec3::ZERO;
 const FOCAL_LENGTH: f32 = 1.0;
 const UPDATE_RATE: f64 = 2.;
 const FRAME_RATE: f64 = 1.;
+const MAX_DEPTH: u32 = 50;
 
 fn main() {
     env_logger::init();

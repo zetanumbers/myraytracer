@@ -1,8 +1,8 @@
-use crate::{winit, State, FOCAL_LENGTH, ORIGIN, SAMPLES_PER_PIXEL, UPDATE_RATE};
+use crate::{winit, State};
 use glam::{vec2, Vec2, Vec3, Vec4};
-use rand::prelude::*;
+use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
-use std::{iter, num::NonZeroUsize, ops::ControlFlow, sync::Arc, thread, time};
+use std::{num::NonZeroUsize, sync::Arc, thread, time};
 
 pub struct Handle {
     thread: Option<thread::JoinHandle<()>>,
@@ -34,9 +34,9 @@ impl Handle {
                 let pixel_shape = Vec2::ONE / shape;
                 let viewport_shape = 2. * shape / shape.y;
 
-                let update_time = time::Duration::from_secs_f64(1. / UPDATE_RATE);
+                let update_time = time::Duration::from_secs_f64(1. / crate::UPDATE_RATE);
                 let pixels_per_frame = NonZeroUsize::new({
-                    let mut rng = thread_rng();
+                    let mut rng = rand_pcg::Pcg32::from_entropy();
                     let start = time::Instant::now();
                     let color = multi_sampled_color(
                         &state.world,
@@ -54,7 +54,7 @@ impl Handle {
                 match (0..size.height).into_par_iter().try_for_each_init(
                     || {
                         (
-                            rand::thread_rng(),
+                            rand_pcg::Pcg32::from_entropy(),
                             vec![[0; 4]; size.width].into_boxed_slice(),
                             pixels_per_frame.clone(),
                         )
@@ -159,24 +159,30 @@ enum RenderError {
 
 fn multi_sampled_color(
     world: &raytracer::World,
-    rng: &mut ThreadRng,
+    rng: &mut rand_pcg::Pcg32,
     uv: Vec2,
     pixel_shape: Vec2,
     viewport_shape: Vec2,
 ) -> [u8; 4] {
-    let sum = iter::repeat_with(|| uv + vec2(rng.gen(), rng.gen()) * pixel_shape)
-        .take(SAMPLES_PER_PIXEL)
-        .map(|uv| {
+    let sum = (0..crate::SAMPLES_PER_PIXEL)
+        .map(|_| {
+            let uv = uv + vec2(rng.gen(), rng.gen()) * pixel_shape;
             let ray = raytracer::Ray {
-                origin: ORIGIN,
-                direction: ORIGIN
-                    + Vec3::from(((uv - Vec2::splat(0.5)) * viewport_shape, -FOCAL_LENGTH)),
+                origin: crate::ORIGIN,
+                direction: crate::ORIGIN
+                    + Vec3::from((
+                        (uv - Vec2::splat(0.5)) * viewport_shape,
+                        -crate::FOCAL_LENGTH,
+                    )),
             };
 
-            world.color(ray).clamp(Vec4::ZERO, Vec4::ONE)
+            world
+                .color(rng, ray, crate::MAX_DEPTH)
+                .clamp(Vec4::ZERO, Vec4::ONE)
         })
-        .fold(Vec4::ZERO, |acc, c| acc + c);
-    let avg = sum / SAMPLES_PER_PIXEL as f32;
+        .reduce(|acc, c| acc + c)
+        .unwrap_or(Vec4::ZERO);
+    let avg = sum / crate::SAMPLES_PER_PIXEL as f32;
     linear_to_srgb(avg)
 }
 

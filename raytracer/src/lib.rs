@@ -1,8 +1,8 @@
 #![feature(result_option_inspect)]
 
 use core::ops;
-
 use glam::{vec3, vec4, Vec3, Vec4};
+use rand_distr::Distribution;
 
 #[derive(Clone, Copy)]
 pub struct Ray {
@@ -42,19 +42,29 @@ impl Default for World {
 }
 
 impl World {
-    pub fn color(&self, ray: Ray) -> Vec4 {
-        if let Some(r) = ray.hit(
-            self,
-            ops::Range {
-                start: 0.0,
-                end: f32::INFINITY,
-            },
-        ) {
-            return Vec4::from((0.5 * (r.normal + Vec3::ONE), 1.));
+    pub fn color(&self, rng: &mut rand_pcg::Pcg32, ray: Ray, depth: u32) -> Vec4 {
+        if depth <= 0 {
+            return vec4(0., 0., 0., 1.);
         }
 
-        let t = 0.5 * (ray.direction.normalize_or_zero().y + 1.);
-        Vec4::ONE.lerp(vec4(0.25, 0.49, 1.0, 1.0), t)
+        let init_t_range = ops::Range {
+            start: 0.001,
+            end: f32::INFINITY,
+        };
+        let hit = match ray.hit(self, init_t_range) {
+            Some(h) => h,
+            None => {
+                let t = 0.5 * (ray.direction.normalize_or_zero().y + 1.);
+                return Vec4::ONE.lerp(vec4(0.25, 0.49, 1.0, 1.0), t);
+            }
+        };
+
+        let direction = hit.normal + Vec3::from(rand_distr::UnitSphere.sample(rng));
+        let next = Ray {
+            origin: hit.at,
+            direction,
+        };
+        0.5 * self.color(rng, next, depth - 1)
     }
 }
 
