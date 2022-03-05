@@ -8,11 +8,14 @@ use std::ops;
 
 use rand_pcg::Pcg32;
 
-pub use crate::{materials::Material, vision::Ray, vision::Visible};
+pub use crate::{
+    materials::Material,
+    vision::{Primitive, Ray, Visible},
+};
 
 #[derive(Clone, Copy)]
 pub struct Input<'a> {
-    pub primitives: &'a [&'a (dyn Visible + Send + Sync)],
+    pub primitives: &'a [Primitive],
 }
 
 pub fn color(input: &Input<'_>, rng: &mut Pcg32, ray: Ray, depth: u32) -> glam::Vec3 {

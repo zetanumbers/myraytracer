@@ -17,9 +17,8 @@ impl Handle {
             move || {
                 let start = time::Instant::now();
 
-                let primitives = state.primitive_refs();
                 let input = raytracer::Input {
-                    primitives: primitives.as_slice(),
+                    primitives: &state.primitives,
                 };
 
                 let size = state.window.inner_size();
@@ -211,7 +210,6 @@ mod tests {
     #[bench]
     fn multisample(b: &mut Bencher) {
         let primitives = crate::example_primitives();
-        let primitives: Vec<_> = primitives.iter().map(|b| &**b).collect();
         let input = raytracer::Input {
             primitives: &primitives,
         };

@@ -1,7 +1,6 @@
+use crate::{materials::MaterialEnum, primitives::Sphere};
 use enum_dispatch::enum_dispatch;
 use std::ops;
-
-use crate::materials::MaterialEnum;
 
 #[derive(Clone, Copy)]
 pub struct Ray {
@@ -86,4 +85,10 @@ impl Hit<'_> {
         }
         self
     }
+}
+
+#[enum_dispatch(Visible)]
+#[derive(Clone, Copy)]
+pub enum Primitive {
+    Sphere,
 }

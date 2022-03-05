@@ -104,7 +104,7 @@ fn main() {
     })
 }
 
-fn example_primitives() -> Vec<Box<dyn raytracer::Visible + Send + Sync>> {
+fn example_primitives() -> Vec<raytracer::Primitive> {
     let ground = raytracer::materials::Lambertian {
         albedo: glam::vec3(0.8, 0.8, 0.),
     };
@@ -112,15 +112,17 @@ fn example_primitives() -> Vec<Box<dyn raytracer::Visible + Send + Sync>> {
         albedo: glam::vec3(0.7, 0.3, 0.3),
     };
     vec![
-        Box::new(raytracer::primitives::Sphere {
+        raytracer::primitives::Sphere {
             center: glam::vec3(0., -100.5, -1.),
             radius: 100.,
             material: ground.into(),
-        }),
-        Box::new(raytracer::primitives::Sphere {
+        }
+        .into(),
+        raytracer::primitives::Sphere {
             center: glam::vec3(0., 0., -1.),
             radius: 0.5,
             material: center.into(),
-        }),
+        }
+        .into(),
     ]
 }

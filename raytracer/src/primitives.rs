@@ -1,13 +1,17 @@
-use crate::{materials::MaterialEnum, vision};
+use crate::{
+    materials::MaterialEnum,
+    vision::{self, Visible},
+};
 use std::ops;
 
+#[derive(Clone, Copy)]
 pub struct Sphere {
     pub center: glam::Vec3,
     pub radius: f32,
     pub material: MaterialEnum,
 }
 
-impl vision::Visible for Sphere {
+impl Visible for Sphere {
     fn hit_with_ray(&self, ray: vision::Ray, t_r: ops::Range<f32>) -> Option<vision::Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
