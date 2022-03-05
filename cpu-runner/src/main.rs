@@ -111,6 +111,15 @@ fn example_primitives() -> Vec<raytracer::Primitive> {
     let center = raytracer::materials::Lambertian {
         albedo: glam::vec3(0.7, 0.3, 0.3),
     };
+    let left = raytracer::materials::Metal {
+        albedo: glam::vec3(0.8, 0.8, 0.8),
+        fuzz: 0.3,
+    };
+    let right = raytracer::materials::Metal {
+        albedo: glam::vec3(0.8, 0.6, 0.2),
+        fuzz: 1.0,
+    };
+
     vec![
         raytracer::primitives::Sphere {
             center: glam::vec3(0., -100.5, -1.),
@@ -122,6 +131,18 @@ fn example_primitives() -> Vec<raytracer::Primitive> {
             center: glam::vec3(0., 0., -1.),
             radius: 0.5,
             material: center.into(),
+        }
+        .into(),
+        raytracer::primitives::Sphere {
+            center: glam::vec3(-1., 0., -1.),
+            radius: 0.5,
+            material: left.into(),
+        }
+        .into(),
+        raytracer::primitives::Sphere {
+            center: glam::vec3(1., 0., -1.),
+            radius: 0.5,
+            material: right.into(),
         }
         .into(),
     ]

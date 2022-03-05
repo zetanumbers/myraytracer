@@ -46,8 +46,38 @@ impl Material for Lambertian {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct Metal {
+    pub albedo: glam::Vec3,
+    pub fuzz: f32,
+}
+
+impl Material for Metal {
+    fn scatter(
+        &self,
+        rng: &mut rand_pcg::Pcg32,
+        ray: vision::Ray,
+        hit: vision::Hit,
+    ) -> Option<Scatter> {
+        let reflection = ray.direction - 2. * ray.direction.project_onto_normalized(hit.normal);
+        let direction =
+            reflection + self.fuzz * glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
+
+        (direction.dot(hit.normal) > 0.).then(|| ())?;
+
+        Some(Scatter {
+            ray: vision::Ray {
+                origin: hit.at,
+                direction,
+            },
+            attenuation: self.albedo,
+        })
+    }
+}
+
 #[enum_dispatch(Material)]
 #[derive(Clone, Copy)]
 pub enum MaterialEnum {
     Lambertian,
+    Metal,
 }

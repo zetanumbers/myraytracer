@@ -9,7 +9,7 @@ use std::ops;
 use rand_pcg::Pcg32;
 
 pub use crate::{
-    materials::Material,
+    materials::{Material, MaterialEnum},
     vision::{Primitive, Ray, Visible},
 };
 
