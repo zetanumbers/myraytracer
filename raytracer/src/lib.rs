@@ -2,13 +2,13 @@
 
 pub mod materials;
 pub mod primitives;
-mod ray;
+mod vision;
 
 use std::ops;
 
 use rand_pcg::Pcg32;
 
-pub use crate::{materials::Material, primitives::Visible, ray::Ray};
+pub use crate::{materials::Material, vision::Ray, vision::Visible};
 
 #[derive(Clone, Copy)]
 pub struct Input<'a> {
