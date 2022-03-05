@@ -11,13 +11,12 @@ mod winit {
         window::Window,
     };
 }
-use glam::Vec3;
 use parking_lot::FairMutex as Mutex;
 use state::State;
 use std::{sync::Arc, time};
 
-const SAMPLES_PER_PIXEL: usize = 1024;
-const ORIGIN: Vec3 = Vec3::ZERO;
+const SAMPLES_PER_PIXEL: usize = 32;
+const ORIGIN: glam::Vec3 = glam::Vec3::ZERO;
 const FOCAL_LENGTH: f32 = 1.0;
 const UPDATE_RATE: f64 = 2.;
 const FRAME_RATE: f64 = 1.;
@@ -37,7 +36,26 @@ fn main() {
             pixels::Pixels::new(size.width, size.height, surface).unwrap()
         }),
         window,
-        world: raytracer::World::default(),
+        primitives: {
+            let ground = raytracer::materials::Lambertian {
+                albedo: glam::vec3(0.8, 0.8, 0.),
+            };
+            let center = raytracer::materials::Lambertian {
+                albedo: glam::vec3(0.7, 0.3, 0.3),
+            };
+            vec![
+                Box::new(raytracer::primitives::Sphere {
+                    center: glam::vec3(0., -100.5, -1.),
+                    radius: 100.,
+                    material: ground,
+                }),
+                Box::new(raytracer::primitives::Sphere {
+                    center: glam::vec3(0., 0., -1.),
+                    radius: 0.5,
+                    material: center,
+                }),
+            ]
+        },
     });
     let mut renderer = renderer::Handle::new(Arc::clone(&state));
     let frame = time::Duration::from_secs_f64(1. / FRAME_RATE);

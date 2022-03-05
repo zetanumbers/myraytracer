@@ -1,5 +1,4 @@
 use crate::{winit, State};
-use glam::{vec2, Vec2, Vec3, Vec4};
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::{num::NonZeroUsize, sync::Arc, thread, time};
@@ -18,6 +17,11 @@ impl Handle {
             move || {
                 let start = time::Instant::now();
 
+                let primitives = state.primitive_refs();
+                let input = raytracer::Input {
+                    primitives: primitives.as_slice(),
+                };
+
                 let size = state.window.inner_size();
                 let size = winit::PhysicalSize {
                     width: size.width as usize,
@@ -30,8 +34,8 @@ impl Handle {
                     size.height
                 );
 
-                let shape = vec2(size.width as f32, size.height as f32);
-                let pixel_shape = Vec2::ONE / shape;
+                let shape = glam::vec2(size.width as f32, size.height as f32);
+                let pixel_shape = glam::Vec2::ONE / shape;
                 let viewport_shape = 2. * shape / shape.y;
 
                 let update_time = time::Duration::from_secs_f64(1. / crate::UPDATE_RATE);
@@ -39,11 +43,11 @@ impl Handle {
                     let mut rng = rand_pcg::Pcg32::from_entropy();
                     let start = time::Instant::now();
                     let color = multi_sampled_color(
-                        &state.world,
+                        &input,
                         &mut rng,
-                        Vec2::ZERO,
-                        Vec2::ONE,
-                        Vec2::splat(2.),
+                        glam::Vec2::ZERO,
+                        glam::Vec2::ONE,
+                        glam::Vec2::splat(2.),
                     );
                     std::hint::black_box(color);
                     let elapsed = start.elapsed();
@@ -67,10 +71,10 @@ impl Handle {
                             for (column, out) in
                                 row_buffer[column_range.clone()].iter_mut().enumerate()
                             {
-                                let xy = vec2(column as f32, y);
+                                let xy = glam::vec2(column as f32, y);
                                 let uv = xy / shape;
                                 *out = multi_sampled_color(
-                                    &state.world,
+                                    &input,
                                     rng,
                                     uv,
                                     pixel_shape,
@@ -158,35 +162,34 @@ enum RenderError {
 }
 
 fn multi_sampled_color(
-    world: &raytracer::World,
+    input: &raytracer::Input,
     rng: &mut rand_pcg::Pcg32,
-    uv: Vec2,
-    pixel_shape: Vec2,
-    viewport_shape: Vec2,
+    uv: glam::Vec2,
+    pixel_shape: glam::Vec2,
+    viewport_shape: glam::Vec2,
 ) -> [u8; 4] {
     let sum = (0..crate::SAMPLES_PER_PIXEL)
         .map(|_| {
-            let uv = uv + vec2(rng.gen(), rng.gen()) * pixel_shape;
+            let uv = uv + glam::vec2(rng.gen(), rng.gen()) * pixel_shape;
             let ray = raytracer::Ray {
                 origin: crate::ORIGIN,
                 direction: crate::ORIGIN
-                    + Vec3::from((
-                        (uv - Vec2::splat(0.5)) * viewport_shape,
+                    + glam::Vec3::from((
+                        (uv - glam::Vec2::splat(0.5)) * viewport_shape,
                         -crate::FOCAL_LENGTH,
                     )),
             };
 
-            world
-                .color(rng, ray, crate::MAX_DEPTH)
-                .clamp(Vec4::ZERO, Vec4::ONE)
+            raytracer::color(input, rng, ray, crate::MAX_DEPTH)
+                .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
         })
         .reduce(|acc, c| acc + c)
-        .unwrap_or(Vec4::ZERO);
+        .unwrap_or(glam::Vec3::ZERO);
     let avg = sum / crate::SAMPLES_PER_PIXEL as f32;
-    linear_to_srgb(avg)
+    linear_to_srgb(glam::Vec4::from((avg, 1.)))
 }
 
-fn linear_to_srgb(color: Vec4) -> [u8; 4] {
+fn linear_to_srgb(color: glam::Vec4) -> [u8; 4] {
     color.to_array().map(|c| {
         let s = if c <= 0.0031308 {
             12.92 * c
