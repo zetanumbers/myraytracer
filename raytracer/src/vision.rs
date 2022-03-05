@@ -1,4 +1,7 @@
+use enum_dispatch::enum_dispatch;
 use std::ops;
+
+use crate::materials::MaterialEnum;
 
 #[derive(Clone, Copy)]
 pub struct Ray {
@@ -38,6 +41,7 @@ impl Ray {
     }
 }
 
+#[enum_dispatch]
 pub trait Visible {
     fn hit_with_ray(&self, ray: Ray, t_r: ops::Range<f32>) -> Option<Hit<'_>>;
 }
@@ -54,7 +58,7 @@ pub struct Hit<'a> {
     pub t: f32,
     pub normal: glam::Vec3,
     pub face: Face,
-    pub material: &'a dyn crate::Material,
+    pub material: &'a MaterialEnum,
 }
 
 #[derive(Clone, Copy)]

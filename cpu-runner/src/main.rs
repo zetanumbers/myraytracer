@@ -115,12 +115,12 @@ fn example_primitives() -> Vec<Box<dyn raytracer::Visible + Send + Sync>> {
         Box::new(raytracer::primitives::Sphere {
             center: glam::vec3(0., -100.5, -1.),
             radius: 100.,
-            material: ground,
+            material: ground.into(),
         }),
         Box::new(raytracer::primitives::Sphere {
             center: glam::vec3(0., 0., -1.),
             radius: 0.5,
-            material: center,
+            material: center.into(),
         }),
     ]
 }

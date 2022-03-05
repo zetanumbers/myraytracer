@@ -1,14 +1,14 @@
-use crate::{materials::Material, vision};
+use crate::{materials::MaterialEnum, vision};
 use std::ops;
 
-pub struct Sphere<M: Material + ?Sized> {
+pub struct Sphere {
     pub center: glam::Vec3,
     pub radius: f32,
-    pub material: M,
+    pub material: MaterialEnum,
 }
 
-impl<'a> Sphere<dyn Material + 'a> {
-    fn hit_with_ray_impl(&self, ray: vision::Ray, t_r: ops::Range<f32>) -> Option<vision::Hit> {
+impl vision::Visible for Sphere {
+    fn hit_with_ray(&self, ray: vision::Ray, t_r: ops::Range<f32>) -> Option<vision::Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
         let b = oc.dot(ray.direction);
@@ -35,11 +35,5 @@ impl<'a> Sphere<dyn Material + 'a> {
             }
             .correct_face(ray),
         )
-    }
-}
-
-impl<M: Material> vision::Visible for Sphere<M> {
-    fn hit_with_ray(&self, ray: vision::Ray, t_r: ops::Range<f32>) -> Option<vision::Hit> {
-        Sphere::<dyn Material>::hit_with_ray_impl(self, ray, t_r)
     }
 }

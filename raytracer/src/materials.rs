@@ -1,6 +1,8 @@
 use crate::vision;
+use enum_dispatch::enum_dispatch;
 use rand_distr::Distribution;
 
+#[enum_dispatch]
 pub trait Material {
     fn scatter(
         &self,
@@ -37,4 +39,10 @@ impl Material for Lambertian {
             attenuation: self.albedo,
         })
     }
+}
+
+#[enum_dispatch(Material)]
+#[derive(Clone, Copy)]
+pub enum MaterialEnum {
+    Lambertian,
 }
