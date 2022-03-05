@@ -42,12 +42,13 @@ impl Handle {
                 let pixels_per_frame = NonZeroUsize::new({
                     let mut rng = rand_pcg::Pcg32::from_entropy();
                     let start = time::Instant::now();
-                    let color = multi_sampled_color(
+                    let color = multisampled_color(
                         &input,
                         &mut rng,
                         glam::Vec2::ZERO,
                         glam::Vec2::ONE,
                         glam::Vec2::splat(2.),
+                        crate::SAMPLES_PER_PIXEL,
                     );
                     std::hint::black_box(color);
                     let elapsed = start.elapsed();
@@ -73,12 +74,13 @@ impl Handle {
                             {
                                 let xy = glam::vec2(column as f32, y);
                                 let uv = xy / shape;
-                                *out = multi_sampled_color(
+                                *out = multisampled_color(
                                     &input,
                                     rng,
                                     uv,
                                     pixel_shape,
                                     viewport_shape,
+                                    crate::SAMPLES_PER_PIXEL,
                                 );
                             }
 
@@ -161,14 +163,15 @@ enum RenderError {
     Resize,
 }
 
-fn multi_sampled_color(
+fn multisampled_color(
     input: &raytracer::Input,
     rng: &mut rand_pcg::Pcg32,
     uv: glam::Vec2,
     pixel_shape: glam::Vec2,
     viewport_shape: glam::Vec2,
+    samples: usize,
 ) -> [u8; 4] {
-    let sum = (0..crate::SAMPLES_PER_PIXEL)
+    let sum = (0..samples)
         .map(|_| {
             let uv = uv + glam::vec2(rng.gen(), rng.gen()) * pixel_shape;
             let ray = raytracer::Ray {
@@ -185,7 +188,7 @@ fn multi_sampled_color(
         })
         .reduce(|acc, c| acc + c)
         .unwrap_or(glam::Vec3::ZERO);
-    let avg = sum / crate::SAMPLES_PER_PIXEL as f32;
+    let avg = sum / samples as f32;
     linear_to_srgb(glam::Vec4::from((avg, 1.)))
 }
 
@@ -198,4 +201,31 @@ fn linear_to_srgb(color: glam::Vec4) -> [u8; 4] {
         };
         (s * 256.).clamp(0., 255.) as u8
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng;
+    use test::Bencher;
+
+    #[bench]
+    fn multisample(b: &mut Bencher) {
+        let primitives = crate::example_primitives();
+        let primitives: Vec<_> = primitives.iter().map(|b| &**b).collect();
+        let input = raytracer::Input {
+            primitives: &primitives,
+        };
+        let mut rng = rand_pcg::Pcg32::from_entropy();
+
+        b.iter(|| {
+            super::multisampled_color(
+                &input,
+                &mut rng,
+                glam::Vec2::ZERO,
+                glam::Vec2::ONE,
+                glam::Vec2::splat(2.),
+                1024,
+            )
+        });
+    }
 }

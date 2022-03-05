@@ -1,4 +1,7 @@
-#![feature(slice_as_chunks, bench_black_box, div_duration)]
+#![feature(slice_as_chunks, test, bench_black_box, div_duration)]
+
+#[cfg(test)]
+extern crate test;
 
 mod renderer;
 mod state;
@@ -36,26 +39,7 @@ fn main() {
             pixels::Pixels::new(size.width, size.height, surface).unwrap()
         }),
         window,
-        primitives: {
-            let ground = raytracer::materials::Lambertian {
-                albedo: glam::vec3(0.8, 0.8, 0.),
-            };
-            let center = raytracer::materials::Lambertian {
-                albedo: glam::vec3(0.7, 0.3, 0.3),
-            };
-            vec![
-                Box::new(raytracer::primitives::Sphere {
-                    center: glam::vec3(0., -100.5, -1.),
-                    radius: 100.,
-                    material: ground,
-                }),
-                Box::new(raytracer::primitives::Sphere {
-                    center: glam::vec3(0., 0., -1.),
-                    radius: 0.5,
-                    material: center,
-                }),
-            ]
-        },
+        primitives: example_primitives(),
     });
     let mut renderer = renderer::Handle::new(Arc::clone(&state));
     let frame = time::Duration::from_secs_f64(1. / FRAME_RATE);
@@ -118,4 +102,25 @@ fn main() {
             _ => (),
         }
     })
+}
+
+fn example_primitives() -> Vec<Box<dyn raytracer::Visible + Send + Sync>> {
+    let ground = raytracer::materials::Lambertian {
+        albedo: glam::vec3(0.8, 0.8, 0.),
+    };
+    let center = raytracer::materials::Lambertian {
+        albedo: glam::vec3(0.7, 0.3, 0.3),
+    };
+    vec![
+        Box::new(raytracer::primitives::Sphere {
+            center: glam::vec3(0., -100.5, -1.),
+            radius: 100.,
+            material: ground,
+        }),
+        Box::new(raytracer::primitives::Sphere {
+            center: glam::vec3(0., 0., -1.),
+            radius: 0.5,
+            material: center,
+        }),
+    ]
 }
