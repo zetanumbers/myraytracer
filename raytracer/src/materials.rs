@@ -30,7 +30,12 @@ impl Material for Lambertian {
         _: vision::Ray,
         hit: vision::Hit,
     ) -> Option<Scatter> {
-        let direction = hit.normal + glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
+        let mut direction = hit.normal + glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
+
+        if direction.length_squared() == 0. {
+            direction = hit.normal
+        }
+
         Some(Scatter {
             ray: vision::Ray {
                 origin: hit.at,
