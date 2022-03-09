@@ -1,4 +1,7 @@
-use crate::vision;
+use crate::{
+    utils::{NonZero, Normalize, Normalized},
+    vision,
+};
 use enum_dispatch::enum_dispatch;
 use rand_distr::Distribution;
 
@@ -30,11 +33,10 @@ impl Material for Lambertian {
         _: &vision::Ray,
         hit: &vision::Hit,
     ) -> Option<Scatter> {
-        let mut direction = hit.normal + glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
-
-        if direction.length_squared() == 0. {
-            direction = hit.normal
-        }
+        let direction = hit.normal.get() + glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
+        let direction = NonZero::try_from(direction)
+            .map(|v| v.normalize())
+            .unwrap_or(hit.normal);
 
         Some(Scatter {
             ray: vision::Ray {
@@ -59,20 +61,24 @@ impl Material for Metal {
         ray: &vision::Ray,
         hit: &vision::Hit,
     ) -> Option<Scatter> {
-        let reflection = ray.direction - 2. * ray.direction.project_onto_normalized(hit.normal);
+        let reflection = reflect(ray.direction.get(), hit.normal);
         let direction =
             reflection + self.fuzz * glam::Vec3::from(rand_distr::UnitSphere.sample(rng));
 
-        (direction.dot(hit.normal) > 0.).then(|| ())?;
+        (direction.dot(hit.normal.get()) > 0.).then(|| ())?;
 
         Some(Scatter {
             ray: vision::Ray {
                 origin: hit.at,
-                direction,
+                direction: unsafe { Normalized::new_unchecked(direction.normalize()) },
             },
             attenuation: self.albedo,
         })
     }
+}
+
+fn reflect(direction: glam::Vec3, normal: Normalized<glam::Vec3>) -> glam::Vec3 {
+    direction - 2. * direction.project_onto_normalized(normal.get())
 }
 
 #[enum_dispatch(Material)]

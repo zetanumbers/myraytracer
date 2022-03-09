@@ -1,5 +1,6 @@
 use crate::{
     materials::MaterialEnum,
+    utils::Normalized,
     vision::{self, Visible},
 };
 use std::ops;
@@ -14,8 +15,8 @@ pub struct Sphere {
 impl Visible for Sphere {
     fn hit_with_ray(&self, ray: &vision::Ray, t_r: &ops::Range<f32>) -> Option<vision::Hit> {
         let oc = ray.origin - self.center;
-        let a = ray.direction.length_squared();
-        let b = oc.dot(ray.direction);
+        let a = ray.direction.get().length_squared();
+        let b = oc.dot(ray.direction.get());
         let c = oc.length_squared() - self.radius.powi(2);
         let d = b.powi(2) - a * c;
 
@@ -33,7 +34,7 @@ impl Visible for Sphere {
             vision::Hit {
                 t,
                 at,
-                normal,
+                normal: unsafe { Normalized::new_unchecked(normal) },
                 face: vision::Face::Front,
                 material: &self.material,
             }

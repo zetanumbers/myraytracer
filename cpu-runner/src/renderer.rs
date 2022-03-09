@@ -1,6 +1,7 @@
 use crate::{winit, State};
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
+use raytracer::Normalize;
 use std::{num::NonZeroUsize, sync::Arc, thread, time};
 
 pub struct Handle {
@@ -175,11 +176,15 @@ fn multisampled_color(
             let uv = uv + glam::vec2(rng.gen(), rng.gen()) * pixel_shape;
             let ray = raytracer::Ray {
                 origin: crate::ORIGIN,
-                direction: crate::ORIGIN
-                    + glam::Vec3::from((
-                        (uv - glam::Vec2::splat(0.5)) * viewport_shape,
-                        -crate::FOCAL_LENGTH,
-                    )),
+                direction: raytracer::NonZero::try_from(
+                    crate::ORIGIN
+                        + glam::Vec3::from((
+                            (uv - glam::Vec2::splat(0.5)) * viewport_shape,
+                            -crate::FOCAL_LENGTH,
+                        )),
+                )
+                .unwrap()
+                .normalize(),
             };
 
             raytracer::color(input, rng, &ray, crate::MAX_DEPTH)
