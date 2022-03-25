@@ -53,6 +53,12 @@ fn xoshiro128plus_next_f32(s: ptr<function, vec4<u32>>) -> f32 {
     return f32(xoshiro128plus_next_u32(s) >> 8u) / 16777216.0;
 }
 
+fn xoshiro128plus_next_vec2_f32(s: ptr<function, vec4<u32>>) -> vec2<f32> {
+    let x = xoshiro128plus_next_f32(s);
+    let y = xoshiro128plus_next_f32(s);
+    return vec2<f32>(x, y);
+}
+
 fn xoshiro128plus_next_vec3_f32(s: ptr<function, vec4<u32>>) -> vec3<f32> {
     let x = xoshiro128plus_next_f32(s);
     let y = xoshiro128plus_next_f32(s);
@@ -60,8 +66,19 @@ fn xoshiro128plus_next_vec3_f32(s: ptr<function, vec4<u32>>) -> vec3<f32> {
     return vec3<f32>(x, y, z);
 }
 
+struct Ray {
+    orig: vec3<f32>;
+    dir: vec3<f32>;
+};
+
+fn color_world(ray_norm: Ray) -> vec3<f32> {
+    let t = 0.5 * ray_norm.dir.y + 0.5;
+    return mix(vec3<f32>(1.0), vec3<f32>(0.5, 0.7, 1.0), t);
+}
+
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+    let focal_length = 1.0;
     let shape = vec2<i32>(r_locals.shape);
     let pixel_pos = clamp(vec2<i32>(in.pixel_pos), vec2<i32>(0), shape - vec2<i32>(1));
 
@@ -69,8 +86,12 @@ fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     
     var color: vec3<f32> = vec3<f32>(0.0);
     
+    let sample_shape = vec2<f32>(2.0 / f32(shape.y));
+    
     for (var i: u32 = 0u; i < r_locals.sample_count; i = i + 1u) {
-        color = color + xoshiro128plus_next_vec3_f32(&rand);
+        let rand_offset = xoshiro128plus_next_vec2_f32(&rand);
+        let ray_dir_denorm = in.ray_dir_denorm + vec3<f32>(rand_offset * sample_shape, focal_length);
+        color = color + color_world(Ray(vec3<f32>(0.0), normalize(ray_dir_denorm)));
     }
     color = color / f32(r_locals.sample_count);
     
