@@ -23,10 +23,11 @@ bytemuck = { version = "1.8.0", features = ["derive"] }
 rand_xoshiro = "0.6.0"
 getrandom = { version = "0.2.5", features = ["js"] }
 rand = "0.8.5"
+futures-task = "0.3.21"
 
 [dependencies.web-sys]
 version = "0.3.56"
-features = ["Window", "Document", "Element", "HtmlCanvasElement", "Location"]
+features = ["Window", "Document", "Element", "HtmlCanvasElement", "HtmlButtonElement", "Location"]
 
 [features]
 default = ["webgl"]
