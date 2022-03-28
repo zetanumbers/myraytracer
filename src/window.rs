@@ -2,7 +2,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 
 pub struct CanvasWindow {
     raw_handle: raw_window_handle::WebHandle,
-    canvas: web_sys::HtmlCanvasElement,
+    _canvas: web_sys::HtmlCanvasElement,
 }
 
 impl CanvasWindow {
@@ -36,7 +36,10 @@ impl CanvasWindow {
         let mut raw_handle = raw_window_handle::WebHandle::empty();
         raw_handle.id = id;
 
-        Ok(Self { raw_handle, canvas })
+        Ok(Self {
+            raw_handle,
+            _canvas: canvas,
+        })
     }
 }
 
