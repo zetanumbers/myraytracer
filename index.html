@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raytracer</title>
+</head>
+
+<body>
+    <script type="module">
+        import init, { run } from './pkg/wasm_runner.js';
+
+        async function main() {
+            await init();
+            const canvas = document.getElementById("window");
+            await run(canvas);
+        }
+
+        window.addEventListener("load", main);
+    </script>
+    <canvas id="window"></canvas>
+</body>
+
+</html>
