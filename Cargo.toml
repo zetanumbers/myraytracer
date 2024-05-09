@@ -6,4 +6,4 @@ resolver = "2"
 inherits = "release"
 opt-level = "z"
 lto = true
-codegen-unit = 1
+codegen-units = 1
