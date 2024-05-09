@@ -45,7 +45,7 @@ fn main() {
                 .exec()
                 .unwrap()
                 .workspace_root;
-            let dump = workspace_root.join("pkg");
+            let dump = workspace_root.join("deploy/pkg");
 
             let mut bindgen = wasm_bindgen_cli_support::Bindgen::new();
 
@@ -64,6 +64,13 @@ fn main() {
                 .omit_default_module_path(false)
                 .generate(&dump)
                 .unwrap();
+
+            // TODO: think of a better way
+            std::fs::copy(
+                workspace_root.join("index.html"),
+                workspace_root.join("deploy/index.html"),
+            )
+            .unwrap();
         }
         _ => print_help(),
     }

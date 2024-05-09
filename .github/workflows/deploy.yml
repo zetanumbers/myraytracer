@@ -25,13 +25,13 @@ jobs:
           target: wasm32-unknown-unknown
       - name: Build WebGL wasm
         run: |
-          cargo xtask build-wasm --profile tiny -F webgl
+          cargo xtask build-wasm --profile ci-deploy -F webgl
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'pkg'
+          path: 'deploy'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

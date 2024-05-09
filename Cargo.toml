@@ -2,8 +2,14 @@
 members = ["raytracer", "native-runner", "wasm-runner", "xtask"]
 resolver = "2"
 
+# Just enable small optimizations
+[profile.ci-deploy]
+inherits = "release"
+opt-level = "s"
+
 [profile.tiny]
 inherits = "release"
 opt-level = "z"
 lto = true
 codegen-units = 1
+strip = true
