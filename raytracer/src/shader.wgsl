@@ -1,21 +1,21 @@
-let TAU: f32 = 6.2831853;
+const TAU: f32 = 6.2831853;
 
 struct VertexOutput {
-    [[location(0)]] pixel_pos: vec2<f32>;
-    [[builtin(position)]] pos: vec4<f32>;
-};
+    @location(0) pixel_pos: vec2<f32>,
+    @builtin(position) pos: vec4<f32>,
+}
 
 struct Locals {
-    shape: vec2<i32>;
-    sample_count: u32;
-    depth: u32;
-};
+    shape: vec2<i32>,
+    sample_count: u32,
+    depth: u32,
+}
 
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<uniform> r_locals: Locals;
 
-[[stage(vertex)]]
-fn vs_main([[location(0)]] vertex: vec2<f32>) -> VertexOutput {
+@vertex
+fn vs_main(@location(0) vertex: vec2<f32>) -> VertexOutput {
     let viewport_quad_shape = vec2<f32>(f32(r_locals.shape.x) / f32(r_locals.shape.y), 1.0);
     
     let pixel_pos = (0.5 * vertex + vec2<f32>(0.5)) * vec2<f32>(r_locals.shape);
@@ -25,7 +25,7 @@ fn vs_main([[location(0)]] vertex: vec2<f32>) -> VertexOutput {
 
 // Random
 
-[[group(0), binding(1)]]
+@group(0) @binding(1)
 var r_rands: texture_2d<u32>;
 
 fn rotl_u32(x: u32, k: u32) -> u32 {
@@ -33,12 +33,12 @@ fn rotl_u32(x: u32, k: u32) -> u32 {
 }
 
 struct Xoshiro128Plus {
-    state: vec4<u32>;
-};
+    state: vec4<u32>,
+}
 
 fn xoshiro128plus_load(pixel_pos: vec2<f32>) -> Xoshiro128Plus {
-    let pixel_pos = clamp(vec2<i32>(pixel_pos), vec2<i32>(0), r_locals.shape - vec2<i32>(1));
-    return Xoshiro128Plus(textureLoad(r_rands, pixel_pos, 0));
+    let pixel_pos_clamped = clamp(vec2<i32>(pixel_pos), vec2<i32>(0), r_locals.shape - vec2<i32>(1));
+    return Xoshiro128Plus(textureLoad(r_rands, pixel_pos_clamped, 0));
 }
 
 fn xoshiro128plus_random_u32(rng: ptr<function, Xoshiro128Plus>) -> u32 {
@@ -91,9 +91,9 @@ fn xoshiro128plus_random_unit_sphere_vec3_f32(rng: ptr<function, Xoshiro128Plus>
 // Render
 
 struct Ray {
-    orig: vec3<f32>;
-    dir: vec3<f32>;
-};
+    orig: vec3<f32>,
+    dir: vec3<f32>,
+}
 
 fn ray_normalized_at(r: ptr<function, Ray>, t: f32) -> vec3<f32> {
     return (*r).orig + t * (*r).dir;
@@ -103,35 +103,35 @@ fn ray_normalized_at(r: ptr<function, Ray>, t: f32) -> vec3<f32> {
 
 struct LambertianRange {
     // vec3<f32>
-    albedo_base_idx: i32;
-    length: i32;
-    _padding2: i32;
-    _padding3: i32;
+    albedo_base_idx: i32,
+    length: i32,
+    _padding2: i32,
+    _padding3: i32,
 };
 
 struct MetalRange {
     // vec3<f32>
-    albedo_base_idx: i32;
+    albedo_base_idx: i32,
     // f32
-    fuzz_base_idx: i32;
-    length: i32;
-    _padding3: i32;
+    fuzz_base_idx: i32,
+    length: i32,
+    _padding3: i32,
 };
 
-let LAMBERTIAN_MATERIAL_TYPE: i32 = 1;
-let METAL_MATERIAL_TYPE: i32 = 2;
+const LAMBERTIAN_MATERIAL_TYPE: i32 = 1;
+const METAL_MATERIAL_TYPE: i32 = 2;
 
 struct DynMaterial {
-    ty: i32;
-    idx: i32;
+    ty: i32,
+    idx: i32,
 };
 
 struct Hit {
-    at: vec3<f32>;
-    t: f32;
-    normal: vec3<f32>;
-    front_face: bool;
-    material: DynMaterial;
+    at: vec3<f32>,
+    t: f32,
+    normal: vec3<f32>,
+    front_face: bool,
+    material: DynMaterial,
 };
 
 fn hit_nil() -> Hit {
@@ -139,55 +139,55 @@ fn hit_nil() -> Hit {
 }
 
 struct HitArgs {
-    ray_norm: Ray;
-    t_min: f32;
-    t_sup: f32;
+    ray_norm: Ray,
+    t_min: f32,
+    t_sup: f32,
 };
 
 struct ScatterOutput {
-    attenuation: vec3<f32>;
+    attenuation: vec3<f32>,
     // could be denormal
-    ray: Ray;
+    ray: Ray,
 };
 
 struct ScatterArgs {
-    ray: Ray;
-    hit: Hit;
+    ray: Ray,
+    hit: Hit,
 };
 
 // Primitives
 
 struct SphereRange {
     // vec3<f32>
-    center_base_idx: i32;
+    center_base_idx: i32,
     // vec3<f32>
-    radius_base_idx: i32;
-    material_ty_base_idx: i32;
-    material_idx_base_idx: i32;
-    length: i32;
-    _padding1: i32;
-    _padding2: i32;
-    _padding3: i32;
+    radius_base_idx: i32,
+    material_ty_base_idx: i32,
+    material_idx_base_idx: i32,
+    length: i32,
+    _padding1: i32,
+    _padding2: i32,
+    _padding3: i32,
 };
 
 struct World {
-    spheres: SphereRange;
-    lambertians: LambertianRange;
-    metals: MetalRange;
+    spheres: SphereRange,
+    lambertians: LambertianRange,
+    metals: MetalRange,
 };
 
-[[group(1), binding(0)]]
+@group(1) @binding(0)
 var<uniform> r_world: World;
 
 // Data arrays
 
-[[group(1), binding(1)]]
+@group(1) @binding(1)
 var r_vec4_f32_data: texture_1d<f32>;
 
-[[group(1), binding(2)]]
+@group(1) @binding(2)
 var r_f32_data: texture_1d<f32>;
 
-[[group(1), binding(3)]]
+@group(1) @binding(3)
 var r_i32_data: texture_1d<i32>;
 
 fn lambertian_load_albedo(idx: i32) -> vec3<f32> {
@@ -278,13 +278,13 @@ fn sphere_hit(idx: i32, args: ptr<function, HitArgs>, out: ptr<function, Hit>) -
         return false;
     }
     
-    let d = sqrt(d);
+    let d_sqrt = sqrt(d);
     let t_min = (*args).t_min;
     let t_sup = (*args).t_sup;
 
-    var t: f32 = (-b - d) / a;
+    var t: f32 = (-b - d_sqrt) / a;
     if (t < t_min || t_sup <= t) {
-        t = (-b + d) / a;
+        t = (-b + d_sqrt) / a;
     }
     if (t < t_min || t_sup <= t) {
         return false;
@@ -352,11 +352,11 @@ fn color_world(ray_norm: Ray, rng: ptr<function, Xoshiro128Plus>) -> vec3<f32> {
     return vec3<f32>(0.0);
 }
 
-let FOCAL_LENGTH: f32 = 1.0;
-let ORIGIN: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
+const FOCAL_LENGTH: f32 = 1.0;
+const ORIGIN: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
 
-[[stage(fragment)]]
-fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let pixel_side = 2.0 / f32(r_locals.shape.y);
     let viewport_base = (in.pixel_pos - 0.5 * vec2<f32>(r_locals.shape)) * pixel_side;
 

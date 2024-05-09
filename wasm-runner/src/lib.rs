@@ -70,7 +70,9 @@ pub async fn run(canvas: web_sys::HtmlCanvasElement, args: JsValue) -> Result<()
             .map_err(|e| JsError::new(&format!("{:?}", e)))?
     };
 
-    raytracer::run(args.into(), raytracer::PlatformArgs { canvas }).await
+    raytracer::run(args.into(), raytracer::PlatformArgs { canvas }).await;
+
+    Ok(())
 }
 
 fn query_string() -> String {

@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use rand::Rng;
 use rand_xoshiro::rand_core::SeedableRng;
-use std::{borrow::Cow, mem, num::NonZeroU64};
+use std::{borrow::Cow, mem, num::NonZeroU64, sync::Arc};
 use wgpu::util::DeviceExt;
 
 #[derive(Clone, Copy, Debug)]
@@ -24,40 +24,79 @@ impl Default for Args {
 }
 
 pub struct PlatformArgs {
+    // TODO: Use better cfg condition like web-sys?
     #[cfg(target_arch = "wasm32")]
     pub canvas: web_sys::HtmlCanvasElement,
 }
 
 #[allow(unused_variables)]
-pub async fn run(args: Args, platform: PlatformArgs) -> ! {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::WindowBuilder::new()
-        .with_resizable(false)
-        .with_inner_size(winit::dpi::PhysicalSize::<u32>::from([
-            args.width,
-            args.height,
-        ]));
-    #[cfg(target_arch = "wasm32")]
-    let window =
-        winit::platform::web::WindowBuilderExtWebSys::with_canvas(window, Some(platform.canvas));
-    let window = window.build(&event_loop).unwrap();
+pub async fn run(args: Args, platform: PlatformArgs) {
+    let event_loop = winit::event_loop::EventLoop::new().unwrap();
+    let window = Arc::new(
+        event_loop
+            .create_window({
+                #[allow(unused_mut)]
+                let mut attrs = winit::window::Window::default_attributes()
+                    .with_resizable(false)
+                    .with_inner_size(winit::dpi::PhysicalSize::<u32>::from([
+                        args.width,
+                        args.height,
+                    ]));
 
-    let mut state = State::new(window, &args).await;
+                #[cfg(target_arch = "wasm32")]
+                {
+                    attrs = winit::platform::web::WindowAttributesExtWebSys::with_canvas(
+                        attrs,
+                        Some(platform.canvas),
+                    );
+                }
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = winit::event_loop::ControlFlow::Wait;
+                attrs
+            })
+            .expect("failed to create a window"),
+    );
+
+    let mut state = State::new(Arc::clone(&window), &args).await;
+
+    run_event_loop(event_loop, move |event, active_event_loop| {
+        log::debug!("Event: {event:?}");
+        active_event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         match event {
-            winit::event::Event::WindowEvent {
-                window_id: _,
-                event: winit::event::WindowEvent::CloseRequested,
-            } => {
-                log::info!("Close requested, exiting...");
-                *control_flow = winit::event_loop::ControlFlow::Exit;
+            winit::event::Event::WindowEvent { event, .. } => match event {
+                winit::event::WindowEvent::CloseRequested => {
+                    log::info!("Close requested, exiting...");
+                    active_event_loop.exit();
+                }
+                winit::event::WindowEvent::RedrawRequested => state.redraw(),
+                _ => (),
+            },
+            winit::event::Event::NewEvents(winit::event::StartCause::Init) => {
+                window.request_redraw()
             }
-            winit::event::Event::RedrawRequested(_) => state.redraw(),
+
             _ => (),
         }
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_event_loop<F>(event_loop: winit::event_loop::EventLoop<()>, event_handler: F)
+where
+    F: FnMut(winit::event::Event<()>, &winit::event_loop::ActiveEventLoop) + 'static,
+{
+    event_loop
+        .run(event_handler)
+        .expect("running an event loop failed");
+}
+
+// TODO: this function only spawns, not runs
+#[cfg(target_arch = "wasm32")]
+fn run_event_loop<F>(event_loop: winit::event_loop::EventLoop<()>, event_handler: F)
+where
+    F: FnMut(winit::event::Event<()>, &winit::event_loop::ActiveEventLoop) + 'static,
+{
+    use winit::platform::web::EventLoopExtWebSys;
+    event_loop.spawn(event_handler);
 }
 
 struct State {
@@ -68,7 +107,7 @@ struct State {
 }
 
 impl State {
-    async fn new(window: winit::window::Window, args: &Args) -> Self {
+    async fn new(window: Arc<winit::window::Window>, args: &Args) -> Self {
         let base = Base::new(window, args).await;
         let subject = Subject::new(&base, args);
         let object = Object::new(&base, args);
@@ -95,15 +134,17 @@ impl State {
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
-                }],
+                })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.glue.render_pipeline);
             rpass.set_bind_group(0, &self.subject.bind_group, &[]);
@@ -118,9 +159,8 @@ impl State {
 }
 
 struct Base {
-    window: winit::window::Window,
     instance: wgpu::Instance,
-    surface: wgpu::Surface,
+    surface: wgpu::Surface<'static>,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -129,22 +169,26 @@ struct Base {
 }
 
 impl Base {
-    async fn new(window: winit::window::Window, args: &Args) -> Self {
+    async fn new(window: Arc<winit::window::Window>, args: &Args) -> Self {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
-        let instance = wgpu::Instance::new(backends);
-        let surface = unsafe { instance.create_surface(&window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            ..<_>::default()
+        });
+        let surface = instance
+            .create_surface(window)
+            .expect("failed to create a surface");
 
-        let adapter =
-            wgpu::util::initialize_adapter_from_env_or_default(&instance, backends, Some(&surface))
-                .await
-                .expect("No suitable GPU adapters found on the system!");
+        let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, Some(&surface))
+            .await
+            .expect("No suitable GPU adapters found on the system!");
 
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                         .using_resolution(adapter.limits()),
                 },
                 None,
@@ -152,20 +196,14 @@ impl Base {
             .await
             .expect("Requesting device");
 
-        let swapchain_format = surface.get_preferred_format(&adapter).unwrap();
-
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
-            width: args.width,
-            height: args.height,
-            present_mode: wgpu::PresentMode::Mailbox,
-        };
+        let surface_config = surface
+            .get_default_config(&adapter, args.width, args.height)
+            .expect("failed to get default surface config");
+        let swapchain_format = surface_config.format;
 
         surface.configure(&device, &surface_config);
 
         Base {
-            window,
             instance,
             surface,
             adapter,
@@ -198,7 +236,7 @@ impl Subject {
     fn new(base: &Base, args: &Args) -> Self {
         let mut seed_rng = rand_xoshiro::SplitMix64::from_entropy();
 
-        let rng_texture_data: Vec<[u32; 4]> = std::iter::from_fn(|| Some(seed_rng.gen()))
+        let rng_texture_data: Vec<[u32; 4]> = std::iter::repeat_with(|| seed_rng.gen())
             .filter(|s| s != &[0; 4])
             .take(args.width as usize * args.height as usize)
             .collect();
@@ -217,7 +255,9 @@ impl Subject {
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba32Uint,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[wgpu::TextureFormat::Rgba32Uint],
             },
+            <_>::default(),
             bytemuck::cast_slice(&rng_texture_data),
         );
 
@@ -525,11 +565,13 @@ impl Object {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D1,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
         };
 
         let data_vec4_f32 = base.device.create_texture_with_data(
             &base.queue,
             &vec4_f32_data_tex_desc,
+            <_>::default(),
             bytemuck::cast_slice(&vec4_f32_data),
         );
 
@@ -543,8 +585,10 @@ impl Object {
                     depth_or_array_layers: 1,
                 },
                 format: wgpu::TextureFormat::R32Float,
+                view_formats: &[wgpu::TextureFormat::R32Float],
                 ..vec4_f32_data_tex_desc
             },
+            <_>::default(),
             bytemuck::cast_slice(&f32_data),
         );
 
@@ -558,8 +602,10 @@ impl Object {
                     depth_or_array_layers: 1,
                 },
                 format: wgpu::TextureFormat::R32Sint,
+                view_formats: &[wgpu::TextureFormat::R32Sint],
                 ..vec4_f32_data_tex_desc
             },
+            <_>::default(),
             bytemuck::cast_slice(&i32_data),
         );
 
@@ -707,7 +753,7 @@ impl Glue {
 
         let shader = base
             .device
-            .create_shader_module(&wgpu::ShaderModuleDescriptor {
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
             });
@@ -729,11 +775,18 @@ impl Glue {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[vertex_buffer_layout],
+                    compilation_options: <_>::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[base.swapchain_format.into()],
+                    targets: &[wgpu::ColorTargetState {
+                        format: base.swapchain_format,
+                        blend: None,
+                        write_mask: <_>::default(),
+                    }
+                    .into()],
+                    compilation_options: <_>::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleStrip,

@@ -2,7 +2,11 @@ use clap::Parser as _;
 use pollster::FutureExt as _;
 
 fn main() {
-    env_logger::init();
+    // TODO: use tracing?
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .parse_default_env()
+        .init();
     let args = Args::parse();
     raytracer::run(args.into(), raytracer::PlatformArgs {}).block_on()
 }
@@ -10,9 +14,9 @@ fn main() {
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::Parser))]
 pub struct Args {
-    #[clap(short, long, default_value_t = 400)]
+    #[clap(long, default_value_t = 400)]
     width: u32,
-    #[clap(short, long, default_value_t = 225)]
+    #[clap(long, default_value_t = 225)]
     height: u32,
     #[clap(long, default_value_t = 100)]
     sample_count: u32,

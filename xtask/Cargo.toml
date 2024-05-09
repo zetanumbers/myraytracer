@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cargo_metadata = "0.14.2"
 wasm-bindgen-cli-support = "0.2.79"
+cargo_metadata = "0.18.1"

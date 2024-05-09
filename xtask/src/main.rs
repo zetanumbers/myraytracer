@@ -11,10 +11,11 @@ fn main() {
 
     match subcommand.as_deref() {
         Some("build-wasm") => {
-            let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+            let cargo = env::var_os("CARGO");
+            let cargo = cargo.as_deref().unwrap_or_else(|| "cargo".as_ref());
 
-            let mut command = Command::new(&cargo)
-                .args(&[
+            let mut command = Command::new(cargo)
+                .args([
                     "build",
                     "--message-format=json-render-diagnostics",
                     "--target=wasm32-unknown-unknown",
@@ -34,10 +35,6 @@ fn main() {
                     } else {
                         None
                     }
-                })
-                .filter(|artifact| {
-                    artifact.target.name == "wasm-runner"
-                        && artifact.target.kind.iter().any(|k| k == "cdylib")
                 })
                 .flat_map(|artifact| artifact.filenames)
                 .filter(|filename| filename.extension() == Some("wasm"));

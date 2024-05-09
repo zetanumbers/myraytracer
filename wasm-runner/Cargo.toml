@@ -8,8 +8,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 raytracer = { path = "../raytracer" }
-console_log = "0.2.0"
 wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"] }
+console_log = "1.0.0"
 console_error_panic_hook = "0.1.7"
 wasm-bindgen-futures = "0.4.29"
 js-sys = "0.3.56"
@@ -18,7 +18,7 @@ serde_urlencoded = "0.7.1"
 log = { version = "0.4.16", features = ["serde"] }
 
 [dependencies.web-sys]
-version = "0.3.56"
+version = "0.3.69"
 features = [
   "Window",
   "Document",
