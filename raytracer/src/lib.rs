@@ -234,12 +234,12 @@ impl State {
 
 struct Base {
     window: Arc<Window>,
-    instance: wgpu::Instance,
+    _instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
-    adapter: wgpu::Adapter,
+    _adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    surface_config: wgpu::SurfaceConfiguration,
+    _surface_config: wgpu::SurfaceConfiguration,
     swapchain_format: wgpu::TextureFormat,
 }
 
@@ -282,12 +282,12 @@ impl Base {
 
         Base {
             window,
-            instance,
+            _instance: instance,
             surface,
-            adapter,
+            _adapter: adapter,
             device,
             queue,
-            surface_config,
+            _surface_config: surface_config,
             swapchain_format,
         }
     }
@@ -302,10 +302,10 @@ struct Locals {
 }
 
 struct Subject {
-    locals: Locals,
-    locals_buffer: wgpu::Buffer,
-    rng: wgpu::Texture,
-    rng_view: wgpu::TextureView,
+    _locals: Locals,
+    _locals_buffer: wgpu::Buffer,
+    _rng: wgpu::Texture,
+    _rng_view: wgpu::TextureView,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
@@ -409,10 +409,10 @@ impl Subject {
         });
 
         Self {
-            locals,
-            locals_buffer,
-            rng,
-            rng_view,
+            _locals: locals,
+            _locals_buffer: locals_buffer,
+            _rng: rng,
+            _rng_view: rng_view,
             bind_group_layout,
             bind_group,
         }
@@ -420,19 +420,19 @@ impl Subject {
 }
 
 struct Object {
-    base_indices: wgpu::Buffer,
-    data_vec4_f32: wgpu::Texture,
-    data_f32: wgpu::Texture,
-    data_i32: wgpu::Texture,
-    view_vec4_f32: wgpu::TextureView,
-    view_f32: wgpu::TextureView,
-    view_i32: wgpu::TextureView,
+    _base_indices: wgpu::Buffer,
+    _data_vec4_f32: wgpu::Texture,
+    _data_f32: wgpu::Texture,
+    _data_i32: wgpu::Texture,
+    _view_vec4_f32: wgpu::TextureView,
+    _view_f32: wgpu::TextureView,
+    _view_i32: wgpu::TextureView,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
 
 impl Object {
-    fn new(base: &Base, args: &Args) -> Self {
+    fn new(base: &Base, _: &Args) -> Self {
         mod api {
             #[derive(Clone, Copy)]
             pub struct Lambertian {
@@ -787,13 +787,13 @@ impl Object {
         });
 
         Object {
-            base_indices,
-            data_vec4_f32,
-            data_f32,
-            data_i32,
-            view_vec4_f32,
-            view_f32,
-            view_i32,
+            _base_indices: base_indices,
+            _data_vec4_f32: data_vec4_f32,
+            _data_f32: data_f32,
+            _data_i32: data_i32,
+            _view_vec4_f32: view_vec4_f32,
+            _view_f32: view_f32,
+            _view_i32: view_i32,
             bind_group_layout,
             bind_group,
         }
@@ -801,9 +801,9 @@ impl Object {
 }
 
 struct Glue {
-    shader: wgpu::ShaderModule,
+    _shader: wgpu::ShaderModule,
     vertices: wgpu::Buffer,
-    pipeline_layout: wgpu::PipelineLayout,
+    _pipeline_layout: wgpu::PipelineLayout,
     render_pipeline: wgpu::RenderPipeline,
 }
 
@@ -876,9 +876,9 @@ impl Glue {
             });
 
         Glue {
-            shader,
+            _shader: shader,
             vertices,
-            pipeline_layout,
+            _pipeline_layout: pipeline_layout,
             render_pipeline,
         }
     }
