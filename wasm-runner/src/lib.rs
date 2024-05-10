@@ -70,8 +70,7 @@ pub fn spawn_app(canvas: web_sys::HtmlCanvasElement, args: JsValue) -> Result<()
         let query = query_string();
         serde_urlencoded::from_str(&query).expect("Parsing query string")
     } else {
-        args.into_serde()
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?
+        serde_wasm_bindgen::from_value(args).map_err(|e| JsError::new(&format!("{:?}", e)))?
     };
 
     let event_loop = EventLoop::with_user_event()
