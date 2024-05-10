@@ -49,8 +49,9 @@ type AppEventDispatch = EventLoopProxy<AppEvent>;
 
 #[derive(Default)]
 enum AppState {
+    /// A temporary state to move out fields
     #[default]
-    Empty,
+    Taken,
     Uninitialized {
         args: Args,
         platform: PlatformArgs,
@@ -63,6 +64,7 @@ enum AppState {
     Running {
         state: State,
     },
+    Closed,
 }
 
 pub struct App {
@@ -83,9 +85,10 @@ impl App {
     fn state_as_str(&self) -> &'static str {
         match self.state {
             AppState::Uninitialized { .. } => "uninitialized",
-            AppState::Empty => "empty",
+            AppState::Taken => "taken",
             AppState::Initializing { .. } => "initializing",
             AppState::Running { .. } => "running",
+            AppState::Closed => "closed",
         }
     }
 }
@@ -147,13 +150,14 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
+                self.state = AppState::Closed;
                 log::info!("Close requested, exiting...");
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => match &mut self.state {
-                AppState::Initializing { .. } => (),
+                AppState::Initializing { .. } | AppState::Closed => (),
                 AppState::Running { state } => state.redraw(),
-                AppState::Empty | AppState::Uninitialized { .. } => {
+                AppState::Taken | AppState::Uninitialized { .. } => {
                     panic!("Requested redraw but app is {}", self.state_as_str())
                 }
             },
