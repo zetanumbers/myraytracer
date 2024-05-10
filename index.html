@@ -25,6 +25,7 @@
         async function main() {
             await init();
             const canvas = document.getElementById("window");
+            // TODO: Fix arguments from url
             await spawn_app(canvas, { width: window.innerWidth, height: window.innerHeight });
         }
 

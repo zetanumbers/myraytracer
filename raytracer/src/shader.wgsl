@@ -9,6 +9,11 @@ struct Locals {
     shape: vec2<i32>,
     sample_count: u32,
     depth: u32,
+    rng_shuffle: vec4<u32>,
+    framebuffer_weight: f32,
+    _padding1: i32,
+    _padding2: i32,
+    _padding3: i32,
 }
 
 @group(0) @binding(0)
@@ -18,7 +23,7 @@ var<uniform> r_locals: Locals;
 fn vs_main(@location(0) vertex: vec2<f32>) -> VertexOutput {
     let viewport_quad_shape = vec2<f32>(f32(r_locals.shape.x) / f32(r_locals.shape.y), 1.0);
     
-    let pixel_pos = (0.5 * vertex + vec2<f32>(0.5)) * vec2<f32>(r_locals.shape);
+    let pixel_pos = (vec2<f32>(0.5, -0.5) * vertex + vec2<f32>(0.5)) * vec2<f32>(r_locals.shape);
     
     return VertexOutput(pixel_pos, vec4<f32>(vertex, 0.0, 1.0));
 }
@@ -38,7 +43,7 @@ struct Xoshiro128Plus {
 
 fn xoshiro128plus_load(pixel_pos: vec2<f32>) -> Xoshiro128Plus {
     let pixel_pos_clamped = clamp(vec2<i32>(pixel_pos), vec2<i32>(0), r_locals.shape - vec2<i32>(1));
-    return Xoshiro128Plus(textureLoad(r_rands, pixel_pos_clamped, 0));
+    return Xoshiro128Plus(textureLoad(r_rands, pixel_pos_clamped, 0) ^ r_locals.rng_shuffle);
 }
 
 fn xoshiro128plus_random_u32(rng: ptr<function, Xoshiro128Plus>) -> u32 {
@@ -355,6 +360,14 @@ fn color_world(ray_norm: Ray, rng: ptr<function, Xoshiro128Plus>) -> vec3<f32> {
 const FOCAL_LENGTH: f32 = 1.0;
 const ORIGIN: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
 
+@group(2) @binding(0)
+var r_framebuffer: texture_2d<f32>;
+
+fn framebuffer_load(pixel_pos: vec2<f32>) -> vec4<f32> {
+    let pixel_pos_clamped = clamp(vec2<i32>(pixel_pos), vec2<i32>(0), r_locals.shape - vec2<i32>(1));
+    return textureLoad(r_framebuffer, pixel_pos_clamped, 0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let pixel_side = 2.0 / f32(r_locals.shape.y);
@@ -369,5 +382,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     color = color / f32(r_locals.sample_count);
     
-    return vec4<f32>(color, 1.0);
+    return mix(vec4<f32>(color, 1.0), framebuffer_load(in.pixel_pos), r_locals.framebuffer_weight);
 }

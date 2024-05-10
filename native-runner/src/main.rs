@@ -22,10 +22,12 @@ pub struct Args {
     width: u32,
     #[clap(long, default_value_t = 0)]
     height: u32,
-    #[clap(long, default_value_t = 100)]
-    sample_count: u32,
+    #[clap(long, default_value_t = 1)]
+    samples_per_frame: u32,
     #[clap(long, default_value_t = 50)]
     ray_depth: u32,
+    #[clap(long, default_value_t = 1.0)]
+    max_framebuffer_weight: f32,
 }
 
 impl From<Args> for raytracer::Args {
@@ -33,8 +35,9 @@ impl From<Args> for raytracer::Args {
         raytracer::Args {
             width: args.width,
             height: args.height,
-            sample_count: args.sample_count,
+            samples_per_frame: args.samples_per_frame,
             ray_depth: args.ray_depth,
+            max_framebuffer_weight: args.max_framebuffer_weight,
         }
     }
 }

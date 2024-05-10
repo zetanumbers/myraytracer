@@ -19,8 +19,9 @@ pub use winit;
 pub struct Args {
     pub width: u32,
     pub height: u32,
-    pub sample_count: u32,
+    pub samples_per_frame: u32,
     pub ray_depth: u32,
+    pub max_framebuffer_weight: f32,
 }
 
 impl Default for Args {
@@ -29,7 +30,8 @@ impl Default for Args {
             width: 0,
             height: 0,
             ray_depth: 50,
-            sample_count: 100,
+            samples_per_frame: 1,
+            max_framebuffer_weight: 1.0,
         }
     }
 }
@@ -128,8 +130,7 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
                 Args { width, height, .. } => [width, height],
             };
 
-            attrs =
-                attrs.with_inner_size(dpi::PhysicalSize::<u32>::from([args.width, args.height]));
+            attrs = attrs.with_inner_size(dpi::LogicalSize::<u32>::from([args.width, args.height]));
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -185,7 +186,10 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::RedrawRequested => match &mut self.state {
                 AppState::Initializing { .. } | AppState::Closed => (),
-                AppState::Running { state } => state.redraw(),
+                AppState::Running { state } => {
+                    state.redraw();
+                    state.request_redraw();
+                }
                 AppState::Taken | AppState::Uninitialized { .. } => {
                     panic!("Requested redraw but app is {}", self.state_as_str())
                 }
@@ -203,7 +207,10 @@ struct State {
     base: Base,
     subject: Subject,
     object: Object,
-    glue: Glue,
+    framebuffers: DoubleFramebuffers,
+    raytrace_glue: RaytraceGlue,
+    framebuffer_glue: FramebufferGlue,
+    sample_count: u32,
 }
 
 impl State {
@@ -211,33 +218,59 @@ impl State {
         let base = Base::new(window, args).await;
         let subject = Subject::new(&base, args);
         let object = Object::new(&base, args);
-        let glue = Glue::new(&base, &subject, &object);
+        let framebuffers = DoubleFramebuffers::new(&base, args);
+        let raytrace_glue = RaytraceGlue::new(&base, &subject, &object, &framebuffers);
+        let framebuffer_glue = FramebufferGlue::new(&base, &subject, &framebuffers);
 
         State {
             base,
             subject,
             object,
-            glue,
+            framebuffers,
+            raytrace_glue,
+            framebuffer_glue,
+            sample_count: 0,
         }
     }
 
     #[inline]
     fn request_redraw(&self) {
-        log::info!("Requested a redraw");
         self.base.window.request_redraw()
     }
 
     fn redraw(&mut self) {
-        log::info!("Redrawing");
-        let frame = self.base.surface.get_current_texture().unwrap();
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .base
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.framebuffers.target.fb_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rpass.set_pipeline(&self.raytrace_glue.render_pipeline);
+            rpass.set_bind_group(0, &self.subject.bind_group, &[]);
+            rpass.set_bind_group(1, &self.object.bind_group, &[]);
+            rpass.set_bind_group(2, &self.framebuffers.secondary.bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.raytrace_glue.vertices.slice(..));
+            rpass.draw(0..4, 0..1);
+        }
+
+        let frame = self.base.surface.get_current_texture().unwrap();
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -253,15 +286,24 @@ impl State {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            rpass.set_pipeline(&self.glue.render_pipeline);
+            rpass.set_pipeline(&self.framebuffer_glue.render_pipeline);
             rpass.set_bind_group(0, &self.subject.bind_group, &[]);
-            rpass.set_bind_group(1, &self.object.bind_group, &[]);
-            rpass.set_vertex_buffer(0, self.glue.vertices.slice(..));
+            rpass.set_bind_group(1, &self.framebuffers.target.bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.framebuffer_glue.vertices.slice(..));
             rpass.draw(0..4, 0..1);
         }
 
         self.base.queue.submit(Some(encoder.finish()));
         frame.present();
+
+        self.framebuffers.swap();
+        self.sample_count = self.sample_count.saturating_add(1);
+        self.subject.locals.framebuffer_weight = self
+            .framebuffers
+            .max_framebuffer_weight
+            .min(self.sample_count as f32 / (self.sample_count + 1) as f32);
+        self.subject.locals.rng_shuffle = rand::thread_rng().gen();
+        self.subject.update_locals_buffer(&self.base);
     }
 }
 
@@ -272,7 +314,7 @@ struct Base {
     _adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    _surface_config: wgpu::SurfaceConfiguration,
+    surface_config: wgpu::SurfaceConfiguration,
     swapchain_format: wgpu::TextureFormat,
 }
 
@@ -320,7 +362,7 @@ impl Base {
             _adapter: adapter,
             device,
             queue,
-            _surface_config: surface_config,
+            surface_config,
             swapchain_format,
         }
     }
@@ -330,13 +372,16 @@ impl Base {
 #[derive(Clone, Copy, Zeroable, Pod)]
 struct Locals {
     shape: [u32; 2],
-    sample_count: u32,
+    samples_per_frame: u32,
     ray_depth: u32,
+    rng_shuffle: [u32; 4],
+    framebuffer_weight: f32,
+    _padding: [u32; 3],
 }
 
 struct Subject {
-    _locals: Locals,
-    _locals_buffer: wgpu::Buffer,
+    locals: Locals,
+    locals_buffer: wgpu::Buffer,
     _rng: wgpu::Texture,
     _rng_view: wgpu::TextureView,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -376,8 +421,11 @@ impl Subject {
 
         let locals = Locals {
             shape: [args.width, args.height],
-            sample_count: args.sample_count,
+            samples_per_frame: args.samples_per_frame,
+            rng_shuffle: [0; 4],
             ray_depth: args.ray_depth,
+            framebuffer_weight: 0.0,
+            _padding: [0; 3],
         };
         let locals_buffer = base
             .device
@@ -442,11 +490,100 @@ impl Subject {
         });
 
         Self {
-            _locals: locals,
-            _locals_buffer: locals_buffer,
+            locals,
+            locals_buffer,
             _rng: rng,
             _rng_view: rng_view,
             bind_group_layout,
+            bind_group,
+        }
+    }
+
+    fn update_locals_buffer(&mut self, base: &Base) {
+        base.queue
+            .write_buffer(&self.locals_buffer, 0, bytemuck::bytes_of(&self.locals));
+    }
+}
+
+struct DoubleFramebuffers {
+    bind_group_layout: wgpu::BindGroupLayout,
+    max_framebuffer_weight: f32,
+    target: Framebuffer,
+    secondary: Framebuffer,
+}
+
+impl DoubleFramebuffers {
+    fn new(base: &Base, args: &Args) -> Self {
+        let bind_group_layout =
+            base.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    }],
+                });
+        DoubleFramebuffers {
+            target: Framebuffer::new(base, args, &bind_group_layout),
+            secondary: Framebuffer::new(base, args, &bind_group_layout),
+            bind_group_layout,
+            max_framebuffer_weight: args.max_framebuffer_weight,
+        }
+    }
+
+    fn swap(&mut self) {
+        mem::swap(&mut self.target, &mut self.secondary)
+    }
+}
+
+struct Framebuffer {
+    _fb: wgpu::Texture,
+    fb_view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+}
+
+impl Framebuffer {
+    fn new(base: &Base, args: &Args, bind_group_layout: &wgpu::BindGroupLayout) -> Self {
+        let fb = base.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: args.width,
+                height: args.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: base.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[base.surface_config.format],
+        });
+
+        let fb_view = fb.create_view(&wgpu::TextureViewDescriptor {
+            label: None,
+            format: Some(base.surface_config.format),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            ..<_>::default()
+        });
+        let bind_group = base.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("framebuffer"),
+            layout: bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&fb_view),
+            }],
+        });
+
+        Self {
+            _fb: fb,
+            fb_view,
             bind_group,
         }
     }
@@ -833,15 +970,20 @@ impl Object {
     }
 }
 
-struct Glue {
+struct RaytraceGlue {
     _shader: wgpu::ShaderModule,
     vertices: wgpu::Buffer,
     _pipeline_layout: wgpu::PipelineLayout,
     render_pipeline: wgpu::RenderPipeline,
 }
 
-impl Glue {
-    fn new(base: &Base, subject: &Subject, object: &Object) -> Self {
+impl RaytraceGlue {
+    fn new(
+        base: &Base,
+        subject: &Subject,
+        object: &Object,
+        framebuffers: &DoubleFramebuffers,
+    ) -> Self {
         const VERTEX_DATA: &[[f32; 2]] = &[[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]];
 
         let vertices = base
@@ -873,7 +1015,11 @@ impl Glue {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                bind_group_layouts: &[&subject.bind_group_layout, &object.bind_group_layout],
+                bind_group_layouts: &[
+                    &subject.bind_group_layout,
+                    &object.bind_group_layout,
+                    &framebuffers.bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -908,7 +1054,94 @@ impl Glue {
                 multiview: None,
             });
 
-        Glue {
+        RaytraceGlue {
+            _shader: shader,
+            vertices,
+            _pipeline_layout: pipeline_layout,
+            render_pipeline,
+        }
+    }
+}
+
+struct FramebufferGlue {
+    _shader: wgpu::ShaderModule,
+    vertices: wgpu::Buffer,
+    _pipeline_layout: wgpu::PipelineLayout,
+    render_pipeline: wgpu::RenderPipeline,
+}
+
+impl FramebufferGlue {
+    // TODO: share code
+    fn new(base: &Base, subject: &Subject, framebuffers: &DoubleFramebuffers) -> Self {
+        const VERTEX_DATA: &[[f32; 2]] = &[[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]];
+
+        let vertices = base
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(VERTEX_DATA),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            }],
+        };
+
+        let shader = base
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "sample_framebuffer.wgsl"
+                ))),
+            });
+
+        let pipeline_layout = base
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&subject.bind_group_layout, &framebuffers.bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = base
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[vertex_buffer_layout],
+                    compilation_options: <_>::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[wgpu::ColorTargetState {
+                        format: base.swapchain_format,
+                        blend: None,
+                        write_mask: <_>::default(),
+                    }
+                    .into()],
+                    compilation_options: <_>::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..<_>::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+            });
+
+        FramebufferGlue {
             _shader: shader,
             vertices,
             _pipeline_layout: pipeline_layout,
