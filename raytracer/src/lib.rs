@@ -26,8 +26,8 @@ pub struct Args {
 impl Default for Args {
     fn default() -> Self {
         Args {
-            width: 400,
-            height: 225,
+            width: 0,
+            height: 0,
             ray_depth: 50,
             sample_count: 100,
         }
@@ -98,7 +98,7 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
         #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
         let AppState::Uninitialized {
             platform,
-            args,
+            mut args,
             dispatch,
         } = mem::take(&mut self.state)
         else {
@@ -106,9 +106,31 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
         };
 
         #[allow(unused_mut)]
-        let mut attrs = Window::default_attributes()
-            .with_resizable(false)
-            .with_inner_size(dpi::PhysicalSize::<u32>::from([args.width, args.height]));
+        let mut attrs = Window::default_attributes().with_resizable(false);
+
+        'set_size: {
+            [args.width, args.height] = match args {
+                Args {
+                    width: 0,
+                    height: 0,
+                    ..
+                } => break 'set_size,
+                Args {
+                    width: side,
+                    height: 0,
+                    ..
+                }
+                | Args {
+                    width: 0,
+                    height: side,
+                    ..
+                } => [side; 2],
+                Args { width, height, .. } => [width, height],
+            };
+
+            attrs =
+                attrs.with_inner_size(dpi::PhysicalSize::<u32>::from([args.width, args.height]));
+        }
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -122,6 +144,13 @@ impl winit::application::ApplicationHandler<AppEvent> for App {
         let window = event_loop
             .create_window(attrs)
             .expect("failed to create a window");
+
+        if args.width == 0 && args.height == 0 {
+            dpi::PhysicalSize {
+                width: args.width,
+                height: args.height,
+            } = window.inner_size();
+        }
 
         let future = Box::pin(async move { State::new(window, &args).await });
 

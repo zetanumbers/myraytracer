@@ -18,9 +18,9 @@ fn main() {
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::Parser))]
 pub struct Args {
-    #[clap(long, default_value_t = 400)]
+    #[clap(long, default_value_t = 0)]
     width: u32,
-    #[clap(long, default_value_t = 225)]
+    #[clap(long, default_value_t = 0)]
     height: u32,
     #[clap(long, default_value_t = 100)]
     sample_count: u32,

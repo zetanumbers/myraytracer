@@ -4,7 +4,17 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0"> -->
+    <style type="text/css">
+        :focus {
+            outline: none;
+        }
+
+        html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+    </style>
     <title>Raytracer</title>
 </head>
 
@@ -15,7 +25,7 @@
         async function main() {
             await init();
             const canvas = document.getElementById("window");
-            await spawn_app(canvas);
+            await spawn_app(canvas, { width: window.innerWidth, height: window.innerHeight });
         }
 
         window.addEventListener("load", main);
