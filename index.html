@@ -10,12 +10,12 @@
 
 <body>
     <script type="module">
-        import init, { run } from './pkg/wasm_runner.js';
+        import init, { spawn_app } from './pkg/wasm_runner.js';
 
         async function main() {
             await init();
             const canvas = document.getElementById("window");
-            await run(canvas);
+            await spawn_app(canvas);
         }
 
         window.addEventListener("load", main);

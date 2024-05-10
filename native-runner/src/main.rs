@@ -1,5 +1,5 @@
 use clap::Parser as _;
-use pollster::FutureExt as _;
+use raytracer::{winit::event_loop::EventLoop, App};
 
 fn main() {
     // TODO: use tracing?
@@ -8,7 +8,11 @@ fn main() {
         .parse_default_env()
         .init();
     let args = Args::parse();
-    raytracer::run(args.into(), raytracer::PlatformArgs {}).block_on()
+    let event_loop = EventLoop::with_user_event()
+        .build()
+        .expect("failed to build an event loop");
+    let mut app = App::new(&event_loop, args.into(), raytracer::PlatformArgs {});
+    event_loop.run_app(&mut app).expect("failed to run an app");
 }
 
 #[derive(Clone, Copy, Debug)]

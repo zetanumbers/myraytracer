@@ -1,8 +1,19 @@
 use bytemuck::{Pod, Zeroable};
 use rand::Rng;
 use rand_xoshiro::rand_core::SeedableRng;
-use std::{borrow::Cow, mem, num::NonZeroU64, sync::Arc};
+use std::{borrow::Cow, future::Future, mem, num::NonZeroU64, pin::Pin, sync::Arc, task};
+use waker::AppEventDispatchWaker;
 use wgpu::util::DeviceExt;
+use winit::{
+    dpi,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    window::{Window, WindowId},
+};
+
+mod waker;
+
+pub use winit;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Args {
@@ -29,74 +40,130 @@ pub struct PlatformArgs {
     pub canvas: web_sys::HtmlCanvasElement,
 }
 
-#[allow(unused_variables)]
-pub async fn run(args: Args, platform: PlatformArgs) {
-    let event_loop = winit::event_loop::EventLoop::new().unwrap();
-    let window = Arc::new(
-        event_loop
-            .create_window({
-                #[allow(unused_mut)]
-                let mut attrs = winit::window::Window::default_attributes()
-                    .with_resizable(false)
-                    .with_inner_size(winit::dpi::PhysicalSize::<u32>::from([
-                        args.width,
-                        args.height,
-                    ]));
+#[derive(Copy, Clone, Debug)]
+pub enum AppEvent {
+    InitializeWake,
+}
 
-                #[cfg(target_arch = "wasm32")]
-                {
-                    attrs = winit::platform::web::WindowAttributesExtWebSys::with_canvas(
-                        attrs,
-                        Some(platform.canvas),
-                    );
-                }
+type AppEventDispatch = EventLoopProxy<AppEvent>;
 
-                attrs
-            })
-            .expect("failed to create a window"),
-    );
+#[derive(Default)]
+enum AppState {
+    #[default]
+    Empty,
+    Uninitialized {
+        args: Args,
+        platform: PlatformArgs,
+        dispatch: AppEventDispatch,
+    },
+    Initializing {
+        waker: task::Waker,
+        future: Pin<Box<dyn Future<Output = State>>>,
+    },
+    Running {
+        state: State,
+    },
+}
 
-    let mut state = State::new(Arc::clone(&window), &args).await;
+pub struct App {
+    state: AppState,
+}
 
-    run_event_loop(event_loop, move |event, active_event_loop| {
-        log::debug!("Event: {event:?}");
-        active_event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
-        match event {
-            winit::event::Event::WindowEvent { event, .. } => match event {
-                winit::event::WindowEvent::CloseRequested => {
-                    log::info!("Close requested, exiting...");
-                    active_event_loop.exit();
-                }
-                winit::event::WindowEvent::RedrawRequested => state.redraw(),
-                _ => (),
+impl App {
+    pub fn new(event_loop: &EventLoop<AppEvent>, args: Args, platform: PlatformArgs) -> Self {
+        App {
+            state: AppState::Uninitialized {
+                args,
+                platform,
+                dispatch: event_loop.create_proxy(),
             },
-            winit::event::Event::NewEvents(winit::event::StartCause::Init) => {
-                window.request_redraw()
-            }
+        }
+    }
 
+    fn state_as_str(&self) -> &'static str {
+        match self.state {
+            AppState::Uninitialized { .. } => "uninitialized",
+            AppState::Empty => "empty",
+            AppState::Initializing { .. } => "initializing",
+            AppState::Running { .. } => "running",
+        }
+    }
+}
+
+impl winit::application::ApplicationHandler<AppEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+        let AppState::Uninitialized {
+            platform,
+            args,
+            dispatch,
+        } = mem::take(&mut self.state)
+        else {
+            return;
+        };
+
+        #[allow(unused_mut)]
+        let mut attrs = Window::default_attributes()
+            .with_resizable(false)
+            .with_inner_size(dpi::PhysicalSize::<u32>::from([args.width, args.height]));
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::WindowAttributesExtWebSys;
+            attrs = attrs
+                .with_canvas(Some(platform.canvas))
+                .with_prevent_default(false)
+                .with_focusable(false);
+        }
+
+        let window = event_loop
+            .create_window(attrs)
+            .expect("failed to create a window");
+
+        let future = Box::pin(async move { State::new(window, &args).await });
+
+        let waker = AppEventDispatchWaker::new(dispatch, AppEvent::InitializeWake).into_waker();
+        // Start initialization
+        waker.wake_by_ref();
+
+        self.state = AppState::Initializing { waker, future }
+    }
+
+    fn user_event(&mut self, _: &ActiveEventLoop, event: AppEvent) {
+        log::debug!("User event: {event:?}");
+        match event {
+            AppEvent::InitializeWake => {
+                if let AppState::Initializing { waker, future } = &mut self.state {
+                    let mut cx = task::Context::from_waker(waker);
+                    if let task::Poll::Ready(state) = future.as_mut().poll(&mut cx) {
+                        state.request_redraw();
+                        self.state = AppState::Running { state };
+                    }
+                }
+            }
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => {
+                log::info!("Close requested, exiting...");
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => match &mut self.state {
+                AppState::Initializing { .. } => (),
+                AppState::Running { state } => state.redraw(),
+                AppState::Empty | AppState::Uninitialized { .. } => {
+                    panic!("Requested redraw but app is {}", self.state_as_str())
+                }
+            },
             _ => (),
         }
-    })
-}
+    }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn run_event_loop<F>(event_loop: winit::event_loop::EventLoop<()>, event_handler: F)
-where
-    F: FnMut(winit::event::Event<()>, &winit::event_loop::ActiveEventLoop) + 'static,
-{
-    event_loop
-        .run(event_handler)
-        .expect("running an event loop failed");
-}
-
-// TODO: this function only spawns, not runs
-#[cfg(target_arch = "wasm32")]
-fn run_event_loop<F>(event_loop: winit::event_loop::EventLoop<()>, event_handler: F)
-where
-    F: FnMut(winit::event::Event<()>, &winit::event_loop::ActiveEventLoop) + 'static,
-{
-    use winit::platform::web::EventLoopExtWebSys;
-    event_loop.spawn(event_handler);
+    fn suspended(&mut self, _: &ActiveEventLoop) {
+        // TODO
+    }
 }
 
 struct State {
@@ -107,7 +174,7 @@ struct State {
 }
 
 impl State {
-    async fn new(window: Arc<winit::window::Window>, args: &Args) -> Self {
+    async fn new(window: Window, args: &Args) -> Self {
         let base = Base::new(window, args).await;
         let subject = Subject::new(&base, args);
         let object = Object::new(&base, args);
@@ -121,7 +188,14 @@ impl State {
         }
     }
 
+    #[inline]
+    fn request_redraw(&self) {
+        log::info!("Requested a redraw");
+        self.base.window.request_redraw()
+    }
+
     fn redraw(&mut self) {
+        log::info!("Redrawing");
         let frame = self.base.surface.get_current_texture().unwrap();
         let view = frame
             .texture
@@ -159,6 +233,7 @@ impl State {
 }
 
 struct Base {
+    window: Arc<Window>,
     instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     adapter: wgpu::Adapter,
@@ -169,14 +244,16 @@ struct Base {
 }
 
 impl Base {
-    async fn new(window: Arc<winit::window::Window>, args: &Args) -> Self {
+    async fn new(window: Window, args: &Args) -> Self {
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
             ..<_>::default()
         });
+
+        let window = Arc::new(window);
         let surface = instance
-            .create_surface(window)
+            .create_surface(Arc::clone(&window))
             .expect("failed to create a surface");
 
         let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, Some(&surface))
@@ -204,6 +281,7 @@ impl Base {
         surface.configure(&device, &surface_config);
 
         Base {
+            window,
             instance,
             surface,
             adapter,

@@ -1,3 +1,7 @@
+use raytracer::{
+    winit::{event_loop::EventLoop, platform::web::EventLoopExtWebSys},
+    App,
+};
 use wasm_bindgen::prelude::*;
 
 #[derive(serde::Deserialize, Clone, Copy, Debug)]
@@ -61,7 +65,7 @@ pub fn start() {
 }
 
 #[wasm_bindgen]
-pub async fn run(canvas: web_sys::HtmlCanvasElement, args: JsValue) -> Result<(), JsValue> {
+pub fn spawn_app(canvas: web_sys::HtmlCanvasElement, args: JsValue) -> Result<(), JsValue> {
     let args: Args = if args.is_undefined() {
         let query = query_string();
         serde_urlencoded::from_str(&query).expect("Parsing query string")
@@ -70,8 +74,11 @@ pub async fn run(canvas: web_sys::HtmlCanvasElement, args: JsValue) -> Result<()
             .map_err(|e| JsError::new(&format!("{:?}", e)))?
     };
 
-    raytracer::run(args.into(), raytracer::PlatformArgs { canvas }).await;
-
+    let event_loop = EventLoop::with_user_event()
+        .build()
+        .expect("failed to build an event loop");
+    let app = App::new(&event_loop, args.into(), raytracer::PlatformArgs { canvas });
+    event_loop.spawn_app(app);
     Ok(())
 }
 
