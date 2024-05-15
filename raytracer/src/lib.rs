@@ -315,7 +315,6 @@ struct Base {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
-    swapchain_format: wgpu::TextureFormat,
 }
 
 impl Base {
@@ -351,7 +350,6 @@ impl Base {
         let surface_config = surface
             .get_default_config(&adapter, args.width, args.height)
             .expect("failed to get default surface config");
-        let swapchain_format = surface_config.format;
 
         surface.configure(&device, &surface_config);
 
@@ -363,7 +361,6 @@ impl Base {
             device,
             queue,
             surface_config,
-            swapchain_format,
         }
     }
 }
@@ -510,10 +507,12 @@ struct DoubleFramebuffers {
     max_framebuffer_weight: f32,
     target: Framebuffer,
     secondary: Framebuffer,
+    format: wgpu::TextureFormat,
 }
 
 impl DoubleFramebuffers {
     fn new(base: &Base, args: &Args) -> Self {
+        let format = wgpu::TextureFormat::Rgba32Float;
         let bind_group_layout =
             base.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -530,10 +529,11 @@ impl DoubleFramebuffers {
                     }],
                 });
         DoubleFramebuffers {
-            target: Framebuffer::new(base, args, &bind_group_layout),
-            secondary: Framebuffer::new(base, args, &bind_group_layout),
+            target: Framebuffer::new(base, args, &bind_group_layout, format),
+            secondary: Framebuffer::new(base, args, &bind_group_layout, format),
             bind_group_layout,
             max_framebuffer_weight: args.max_framebuffer_weight,
+            format,
         }
     }
 
@@ -549,7 +549,12 @@ struct Framebuffer {
 }
 
 impl Framebuffer {
-    fn new(base: &Base, args: &Args, bind_group_layout: &wgpu::BindGroupLayout) -> Self {
+    fn new(
+        base: &Base,
+        args: &Args,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+    ) -> Self {
         let fb = base.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
@@ -560,14 +565,14 @@ impl Framebuffer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: base.surface_config.format,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[base.surface_config.format],
+            view_formats: &[format],
         });
 
         let fb_view = fb.create_view(&wgpu::TextureViewDescriptor {
             label: None,
-            format: Some(base.surface_config.format),
+            format: Some(format),
             dimension: Some(wgpu::TextureViewDimension::D2),
             aspect: wgpu::TextureAspect::All,
             ..<_>::default()
@@ -1038,7 +1043,7 @@ impl RaytraceGlue {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[wgpu::ColorTargetState {
-                        format: base.swapchain_format,
+                        format: framebuffers.format,
                         blend: None,
                         write_mask: <_>::default(),
                     }
@@ -1125,7 +1130,7 @@ impl FramebufferGlue {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[wgpu::ColorTargetState {
-                        format: base.swapchain_format,
+                        format: base.surface_config.format,
                         blend: None,
                         write_mask: <_>::default(),
                     }
